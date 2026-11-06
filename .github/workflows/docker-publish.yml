@@ -47,18 +47,51 @@ jobs:
       - name: Set up Docker Buildx
         uses: docker/setup-buildx-action@v3
 
-      - name: Resolve target registries
+      - name: Resolve target registries & sanitize credentials
         id: targets
         env:
-          DH_USER: ${{ secrets.DOCKERHUB_USERNAME }}
-          DH_TOKEN: ${{ secrets.DOCKERHUB_TOKEN }}
+          RAW_DH_USER_SECRET: ${{ secrets.DOCKERHUB_USERNAME }}
+          RAW_DH_USER_VAR: ${{ vars.DOCKERHUB_USERNAME }}
+          RAW_DH_TOKEN: ${{ secrets.DOCKERHUB_TOKEN }}
           DH_REPO: ${{ vars.DOCKERHUB_REPO }}
         run: |
           GHCR_REPO=$(echo "ghcr.io/${GITHUB_REPOSITORY}" | tr '[:upper:]' '[:lower:]')
           echo "ghcr_repo=${GHCR_REPO}" >> "$GITHUB_OUTPUT"
+
+          RAW_USER="${RAW_DH_USER_SECRET:-$RAW_DH_USER_VAR}"
+          # If user pasted 'docker login -u <username>', extract just the username
+          if printf '%s' "$RAW_USER" | grep -Eq 'docker[[:space:]]+login'; then
+            RAW_USER=$(printf '%s' "$RAW_USER" | sed -E 's/.*-u[[:space:]]+([^[:space:]]+).*/\1/')
+          fi
+          # Strip whitespace, control chars, quotes, and lowercase Docker ID
+          DH_USER=$(printf '%s' "$RAW_USER" | tr -d '[:space:][:cntrl:]"'"'" | tr '[:upper:]' '[:lower:]')
+
+          # Extract dckr_pat_... token if present, otherwise strip whitespace/control chars/quotes
+          if printf '%s' "$RAW_DH_TOKEN" | grep -Eo 'dckr_pat_[A-Za-z0-9_-]+' >/dev/null 2>&1; then
+            DH_TOKEN=$(printf '%s' "$RAW_DH_TOKEN" | grep -Eo 'dckr_pat_[A-Za-z0-9_-]+' | head -n 1)
+          else
+            DH_TOKEN=$(printf '%s' "$RAW_DH_TOKEN" | sed -E 's/^[Bb]earer[[:space:]]+//' | tr -d '[:space:][:cntrl:]"'"'")
+          fi
+
           if [ -n "$DH_USER" ] && [ -n "$DH_TOKEN" ]; then
+            echo "::add-mask::${DH_TOKEN}"
+            USER_LEN=${#DH_USER}
+            TOKEN_LEN=${#DH_TOKEN}
+            echo "Docker Hub username resolved: '${DH_USER}' (length=${USER_LEN})"
+            if printf '%s' "$DH_TOKEN" | grep -q '^dckr_pat_'; then
+              echo "Docker Hub token format verified: dckr_pat_*** (length=${TOKEN_LEN})"
+            else
+              echo "::warning::DOCKERHUB_TOKEN does not start with 'dckr_pat_' (length=${TOKEN_LEN}). Make sure it is a valid Docker Hub Personal Access Token."
+            fi
+            if printf '%s' "$DH_USER" | grep -q '@'; then
+              echo "::error::DOCKERHUB_USERNAME ('${DH_USER}') contains '@'. Please use your Docker Hub ID (username), not your email address."
+              exit 1
+            fi
+
             echo "dockerhub_enabled=true" >> "$GITHUB_OUTPUT"
-            REPO_NAME=$(echo "${DH_REPO:-${DH_USER}/${GITHUB_REPOSITORY#*/}}" | tr '[:upper:]' '[:lower:]')
+            echo "dh_user=${DH_USER}" >> "$GITHUB_OUTPUT"
+            echo "dh_token=${DH_TOKEN}" >> "$GITHUB_OUTPUT"
+            REPO_NAME=$(echo "${DH_REPO:-${DH_USER}/${GITHUB_REPOSITORY#*/}}" | tr -d '[:space:][:cntrl:]' | tr '[:upper:]' '[:lower:]')
             echo "dockerhub_repo=${REPO_NAME}" >> "$GITHUB_OUTPUT"
             {
               echo "images<<EOF"
@@ -75,8 +108,8 @@ jobs:
         if: steps.targets.outputs.dockerhub_enabled == 'true'
         uses: docker/login-action@v3
         with:
-          username: ${{ secrets.DOCKERHUB_USERNAME }}
-          password: ${{ secrets.DOCKERHUB_TOKEN }}
+          username: ${{ steps.targets.outputs.dh_user }}
+          password: ${{ steps.targets.outputs.dh_token }}
 
       - name: Log in to GitHub Container Registry
         uses: docker/login-action@v3
@@ -103,17 +136,18 @@ jobs:
           target: runtime
           platforms: linux/amd64,linux/arm64
           push: true
-          tags: ${{ steps.meta.outputs.tags }}
+          tags: ${{ steps.targets.outputs.images != '' && steps.meta.outputs.tags || '' }}
           labels: ${{ steps.meta.outputs.labels }}
           cache-from: type=gha
           cache-to: type=gha,mode=max
 
       - name: Sync README.md to Docker Hub description
         if: steps.targets.outputs.dockerhub_enabled == 'true' && github.ref == 'refs/heads/main'
+        continue-on-error: true
         uses: peter-evans/dockerhub-description@v4
         with:
-          username: ${{ secrets.DOCKERHUB_USERNAME }}
-          password: ${{ secrets.DOCKERHUB_TOKEN }}
+          username: ${{ steps.targets.outputs.dh_user }}
+          password: ${{ steps.targets.outputs.dh_token }}
           repository: ${{ steps.targets.outputs.dockerhub_repo }}
           readme-filepath: ./README.md
 
