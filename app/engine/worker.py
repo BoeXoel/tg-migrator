@@ -264,6 +264,7 @@ class Worker:
 
     async def _handle_error(self, job: Job, attempts: int, exc: BaseException) -> None:
         settings = self.store.current
+        lang = getattr(settings.ui, "language", "en") or "en"
         error = compact_error(exc)
 
         if isinstance(exc, ACCOUNT_RESTRICTED_ERRORS):
@@ -274,10 +275,12 @@ class Worker:
         elif isinstance(exc, AUTH_LOST_ERRORS):
             await self.repo.defer_job(job.id, error, reason_code="auth_lost", retry_after_seconds=60)
             await self.pause(f"Telegram session invalid: {exc.__class__.__name__}")
-            await self.notifier.notify(
-                f"🛑 账号会话失效（{exc.__class__.__name__}），队列已暂停。请用 /login 重新登录后 /resume。",
-                key="auth_lost",
+            msg = (
+                f"🛑 账号会话失效（{exc.__class__.__name__}），队列已暂停。请用 /login 重新登录后 /resume。"
+                if lang == "zh"
+                else f"🛑 Telegram session invalidated ({exc.__class__.__name__}); queue paused. Please /login again and then /resume."
             )
+            await self.notifier.notify(msg, key="auth_lost")
             return
         elif isinstance(exc, PEER_INVALID_ERRORS):
             exc = PeerUnresolvedError(f"target of job {job.id}")
@@ -288,29 +291,35 @@ class Worker:
         if isinstance(exc, AccountRestrictedError):
             await self.repo.defer_job(job.id, compact_error(exc), reason_code=exc.reason_code, retry_after_seconds=exc.retry_after_seconds)
             await self.pause(str(exc))
-            await self.notifier.notify(
+            msg = (
                 "🛑 Telegram 对账号施加了限制（PeerFlood/UserRestricted），队列已暂停，不会自动切换账号。"
-                "请确认账号状态后发送 /resume。",
-                key="account_restricted",
+                "请确认账号状态后发送 /resume。"
+                if lang == "zh"
+                else "🛑 Telegram restricted the account (PeerFlood/UserRestricted). Queue is paused. Verify account status before sending /resume."
             )
+            await self.notifier.notify(msg, key="account_restricted")
             return
         if isinstance(exc, PeerUnresolvedError):
             await self.repo.defer_job(job.id, compact_error(exc), reason_code=exc.reason_code, retry_after_seconds=600)
-            await self.notifier.notify(
-                f"⚠️ 写入账号无法识别目标会话（任务 {job.id}）。请把 Bot 加入目标群/频道，并在其中发送 /bind。",
-                key=f"peer:{job.target_id}",
+            msg = (
+                f"⚠️ 写入账号无法识别目标会话（任务 {job.id}）。请把 Bot 加入目标群/频道，并在其中发送 /bind。"
+                if lang == "zh"
+                else f"⚠️ Writer account cannot resolve target chat (job {job.id}). Please add the Bot to the target chat and send /bind there."
             )
+            await self.notifier.notify(msg, key=f"peer:{job.target_id}")
             return
         if isinstance(exc, PauseWorkerError):
             await self.repo.defer_job(job.id, compact_error(exc), reason_code=exc.reason_code, retry_after_seconds=exc.retry_after_seconds)
             await self.pause(str(exc))
-            await self.notifier.notify(f"🛑 队列已暂停：{exc}", key=f"pause:{exc.reason_code}")
+            msg = f"🛑 队列已暂停：{exc}" if lang == "zh" else f"🛑 Queue paused: {exc}"
+            await self.notifier.notify(msg, key=f"pause:{exc.reason_code}")
             return
         if isinstance(exc, DeferredJobError):
             await self.repo.defer_job(job.id, error, reason_code=exc.reason_code, retry_after_seconds=exc.retry_after_seconds)
             log.warning("Job %s deferred %ss: %s", job.id, exc.retry_after_seconds, exc)
             if exc.reason_code in {"disk_low", "disk_full"}:
-                await self.notifier.notify(f"💾 磁盘空间不足，任务已推迟：{exc}", key="disk")
+                msg = f"💾 磁盘空间不足，任务已推迟：{exc}" if lang == "zh" else f"💾 Low disk space; job deferred: {exc}"
+                await self.notifier.notify(msg, key="disk")
             return
         if isinstance(exc, PermanentJobError):
             await self.repo.mark_skipped(job.id, error, reason_code=exc.reason_code or "permanent")
@@ -321,7 +330,8 @@ class Worker:
             return
         if isinstance(exc, PERMISSION_ERRORS):
             await self.repo.mark_skipped(job.id, error, reason_code="permission_denied")
-            await self.notifier.notify(f"⚠️ 权限不足，任务 {job.id} 已跳过：{error}", key=f"perm:{job.target_id}")
+            msg = f"⚠️ 权限不足，任务 {job.id} 已跳过：{error}" if lang == "zh" else f"⚠️ Permission denied; job {job.id} skipped: {error}"
+            await self.notifier.notify(msg, key=f"perm:{job.target_id}")
             return
 
         retryable = isinstance(exc, (RetryableJobError, ConnectionError, OSError, asyncio.TimeoutError) + RETRYABLE_TELEGRAM_ERRORS)
@@ -349,18 +359,28 @@ class Worker:
         if task is None:
             return
         counts = await self.repo.task_job_counts(task_id)
-        text = (
-            f"✅ 任务 #{task.id} 完成：{task.source_title or task.source_chat_id}\n"
-            f"成功 {counts.get('done', 0)} · 跳过 {counts.get('skipped', 0)} · 失败 {counts.get('failed', 0)}"
-        )
+        lang = getattr(self.store.current.ui, "language", "en") or "en"
+        if lang == "zh":
+            text = (
+                f"✅ 任务 #{task.id} 完成：{task.source_title or task.source_chat_id}\n"
+                f"成功 {counts.get('done', 0)} · 跳过 {counts.get('skipped', 0)} · 失败 {counts.get('failed', 0)}"
+            )
+        else:
+            text = (
+                f"✅ Task #{task.id} completed: {task.source_title or task.source_chat_id}\n"
+                f"Done {counts.get('done', 0)} · Skipped {counts.get('skipped', 0)} · Failed {counts.get('failed', 0)}"
+            )
         await self.notifier.notify(text, chat_id=task.notify_chat_id)
 
-    def status_lines(self) -> list[str]:
+    def status_lines(self, lang: str = "en") -> list[str]:
         lines = []
         for item in self.active.values():
-            lines.append(f"▶️ #{item.job_id} {item.source} → {item.target_name}（{item.phase}）")
+            lines.append(f"▶️ #{item.job_id} {item.source} → {item.target_name} ({item.phase})")
         if self.batch_pause_until:
-            lines.append(f"⏸ 批次间歇至 {self.batch_pause_until:%H:%M:%S} UTC")
+            if lang == "zh":
+                lines.append(f"⏸ 批次间歇至 {self.batch_pause_until:%H:%M:%S} UTC")
+            else:
+                lines.append(f"⏸ Batch cooldown until {self.batch_pause_until:%H:%M:%S} UTC")
         return lines
 
 

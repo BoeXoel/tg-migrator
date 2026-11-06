@@ -55,13 +55,15 @@ class Repository:
 
     # --------------------------------------------------------------- settings
 
-    async def load_settings(self) -> RuntimeSettings:
+    async def load_settings(self, *, default_language: str = "en") -> RuntimeSettings:
         async with self._sm() as session:
             rows = (await session.execute(select(Setting).where(Setting.key.in_(SECTION_NAMES)))).scalars().all()
         sections: dict[str, Any] = {}
         for row in rows:
             if isinstance(row.value, dict):
                 sections[row.key] = row.value
+        if "ui" not in sections:
+            sections["ui"] = {"language": default_language}
         try:
             return settings_from_sections(sections)
         except (TypeError, ValueError) as exc:

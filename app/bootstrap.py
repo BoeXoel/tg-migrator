@@ -35,7 +35,7 @@ async def build_context(boot: BootstrapConfig) -> AppContext:
     engine = create_engine(database_url)
     await init_models(engine)
     repo = Repository(engine, make_sessionmaker(engine), secrets)
-    store = SettingsStore(repo)
+    store = SettingsStore(repo, default_language=boot.bot_lang)
     await store.load()
 
     limiter = TelegramLimiter(store)
@@ -89,9 +89,14 @@ async def run_service(boot: BootstrapConfig) -> None:
         reader_ok = await ctx.clients.start_reader()
         ctx.worker.start()
 
-        status = "读取账号已登录" if reader_ok else "读取账号未登录，请发送 /login"
-        paused = "，队列处于暂停状态（/resume 恢复）" if ctx.worker.paused else ""
-        await ctx.notifier.notify(f"🟢 TG Migrator {__version__} 已启动：{status}{paused}")
+        if ctx.lang == "zh":
+            status = "读取账号已登录" if reader_ok else "读取账号未登录，请发送 /login"
+            paused = "，队列处于暂停状态（/resume 恢复）" if ctx.worker.paused else ""
+            await ctx.notifier.notify(f"🟢 TG Migrator {__version__} 已启动：{status}{paused}")
+        else:
+            status = "Reader account logged in" if reader_ok else "Reader not logged in (send /login)"
+            paused = "; queue is paused (/resume to continue)" if ctx.worker.paused else ""
+            await ctx.notifier.notify(f"🟢 TG Migrator {__version__} started: {status}{paused}")
 
         disconnected = asyncio.ensure_future(bot.disconnected)
         stopper = asyncio.ensure_future(stop.wait())

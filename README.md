@@ -114,6 +114,7 @@ Send `/config` to open the interactive button panel (toggle media types, transfe
 
 | Setting Key | Default | Description |
 | --- | --- | --- |
+| `ui.language` | `en` | Bot interface language: `en` (English) or `zh` (Simplified Chinese); defaults to `BOT_LANG` in `.env` |
 | `transfer.hide_sender` | `true` | Hide original sender header during native copy |
 | `transfer.native_copy` / `native_only` | `true` / `false` | Prefer zero-download native copy / require native copy only |
 | `transfer.strip_spoilers` | `true` | Strip media spoiler masks (triggers download & re-upload when present) |
@@ -203,7 +204,7 @@ PROXY_BYPASS_RESOLVE=true
 | **Retry & Cancel** | `/retry [task_id]` `/cancel_task <id>` | Re-queue failed items, cancel an active task |
 | **Targets** | `/targets` `/bind` `/add_tg` `/add_local` `/add_webdav` | List, bind, add, or test storage destinations |
 | **Watch Routes** | `/routes` `/add_route` `/route_set` `/route_unset` | Manage continuous routes, historical scans, and per-route overrides |
-| **Configuration** | `/config` `/get [prefix]` `/set <key> <value>` | Interactive settings UI, query or live-update runtime parameters |
+| **Configuration** | `/config` `/lang` `/get [prefix]` `/set <key> <value>` | Interactive settings UI, switch language (`en`/`zh`), query or live-update runtime parameters |
 | **Content Filters** | `/filters` `/filter_add` `/filter_del` `/filter_toggle` | Manage keyword/regex allowlists/blocklists and media filters |
 | **Backup & Restore** | `/export [secrets]` `/import [replace]` | Export or import YAML configuration backups |
 | **Verify & Reports** | `/verify <task_id>` `/report [task_id]` | Sample-verify delivered messages, export CSV report of skipped oversized files |

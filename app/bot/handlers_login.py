@@ -16,7 +16,7 @@ from telethon import Button, TelegramClient, errors, events
 
 from app.bot.auth import admin_only
 from app.bot.context import AppContext
-from app.bot.ui import command, esc
+from app.bot.ui import back_button, command, esc, extract_secret_text, tr
 from app.telegram.client_manager import display_name
 
 log = logging.getLogger("migrator.bot.login")
@@ -38,23 +38,40 @@ class LoginSession:
         return time.monotonic() - self.started > TIMEOUT_SECONDS
 
 
-def _keypad(digits: str) -> tuple[str, list[list[Any]]]:
+def _keypad(digits: str, lang: str = "en") -> tuple[str, list[list[Any]]]:
     shown = " ".join("•" for _ in digits) or "—"
     rows = [
         [Button.inline(str(n), f"lg:d:{n}".encode()) for n in (1, 2, 3)],
         [Button.inline(str(n), f"lg:d:{n}".encode()) for n in (4, 5, 6)],
         [Button.inline(str(n), f"lg:d:{n}".encode()) for n in (7, 8, 9)],
-        [Button.inline("⌫", b"lg:bk"), Button.inline("0", b"lg:d:0"), Button.inline("✅ 确认", b"lg:ok")],
-        [Button.inline("取消登录", b"lg:x")],
+        [
+            Button.inline("⌫", b"lg:bk"),
+            Button.inline("0", b"lg:d:0"),
+            Button.inline(tr(lang, "✅ Submit", "✅ 确认"), b"lg:ok"),
+        ],
+        [Button.inline(tr(lang, "✖️ Cancel Login", "✖️ 取消登录"), b"lg:x")],
     ]
-    return f"请在下方键盘输入 Telegram 发给你的验证码：\n<b>{shown}</b>", rows
+    prompt = tr(
+        lang,
+        f"Enter the verification code sent by Telegram using the keypad below:\n<b>{shown}</b>",
+        f"请在下方键盘输入 Telegram 发给你的验证码：\n<b>{shown}</b>",
+    )
+    return prompt, rows
 
 
 async def _finish(event: Any, ctx: AppContext, session: LoginSession) -> None:
+    lang = ctx.lang
     ctx.state.login.pop(event.sender_id, None)
     await ctx.clients.adopt_reader(session.client)
     me = ctx.clients.reader_me
-    await event.respond(f"✅ 已登录读取账号：{esc(display_name(me))}（{me.id}）。监听与队列已启动。")
+    await event.respond(
+        tr(
+            lang,
+            f"✅ Logged in reader account: {esc(display_name(me))} ({me.id}). Watcher and worker queue are now active.",
+            f"✅ 已登录读取账号：{esc(display_name(me))}（{me.id}）。监听与队列已启动。",
+        ),
+        buttons=[[back_button(b"m:home", lang=lang)]],
+    )
 
 
 async def _abort(ctx: AppContext, user_id: int) -> None:
@@ -67,9 +84,15 @@ async def _abort(ctx: AppContext, user_id: int) -> None:
 
 
 async def cmd_login(event: Any, ctx: AppContext) -> None:
+    lang = ctx.lang
     if ctx.clients.reader is not None:
         await event.respond(
-            f"已登录：{esc(display_name(ctx.clients.reader_me))}。如需切换账号，先发送 /logout。"
+            tr(
+                lang,
+                f"Already logged in as: {esc(display_name(ctx.clients.reader_me))}. Send /logout first if you want to switch accounts.",
+                f"已登录：{esc(display_name(ctx.clients.reader_me))}。如需切换账号，先发送 /logout。",
+            ),
+            buttons=[[back_button(b"m:home", lang=lang)]],
         )
         return
     await _abort(ctx, event.sender_id)
@@ -81,48 +104,68 @@ async def cmd_login(event: Any, ctx: AppContext) -> None:
         return
     ctx.state.login[event.sender_id] = LoginSession(client=client)
     await event.respond(
-        "🔐 <b>登录读取账号</b>\n这个账号用于读取来源消息（需要已加入来源群组）。\n"
-        "请发送手机号（国际格式，如 <code>+8613800000000</code>）。\n/cancel 取消"
+        tr(
+            lang,
+            "🔐 <b>Log In Reader Account</b>\nThis account reads source messages (it must be a member of the source chats).\n"
+            "Please send your phone number in international format (e.g. <code>+14155550100</code>).",
+            "🔐 <b>登录读取账号</b>\n这个账号用于读取来源消息（需要已加入来源群组）。\n"
+            "请发送手机号（国际格式，如 <code>+8613800000000</code>）。",
+        ),
+        buttons=[[Button.inline(tr(lang, "✖️ Cancel Login", "✖️ 取消登录"), b"lg:x")]],
     )
 
 
 async def cmd_logout(event: Any, ctx: AppContext) -> None:
+    lang = ctx.lang
     if ctx.clients.reader is None:
-        await event.respond("当前没有已登录的读取账号。")
+        await event.respond(tr(lang, "No reader account is currently logged in.", "当前没有已登录的读取账号。"))
         return
     await ctx.worker.pause("Reader logged out")
     await ctx.clients.logout_reader()
-    await event.respond("👋 已退出读取账号并删除会话文件。队列已暂停，重新 /login 后发送 /resume。")
+    await event.respond(
+        tr(
+            lang,
+            "👋 Logged out reader account and deleted session file. Queue is paused; send /resume after logging in again with /login.",
+            "👋 已退出读取账号并删除会话文件。队列已暂停，重新 /login 后发送 /resume。",
+        )
+    )
 
 
 async def handle_login_text(event: Any, ctx: AppContext) -> bool:
     """Consume a private text message if a login is in progress."""
 
+    lang = ctx.lang
     session: LoginSession | None = ctx.state.login.get(event.sender_id)
     if session is None:
         return False
     if session.expired:
         await _abort(ctx, event.sender_id)
-        await event.respond("登录已超时，请重新 /login。")
+        await event.respond(tr(lang, "Login timed out. Please send /login again.", "登录已超时，请重新 /login。"))
         return True
     text = (event.raw_text or "").strip()
 
     if session.stage == "phone":
         phone = "".join(ch for ch in text if ch.isdigit() or ch == "+")
         if len(phone) < 6:
-            await event.respond("手机号格式不正确，请重新发送。")
+            await event.respond(tr(lang, "Invalid phone number format. Please resend.", "手机号格式不正确，请重新发送。"))
             return True
         try:
             sent = await session.client.send_code_request(phone)
         except errors.PhoneNumberInvalidError:
-            await event.respond("手机号无效，请重新发送。")
+            await event.respond(tr(lang, "Invalid phone number. Please resend.", "手机号无效，请重新发送。"))
             return True
         except errors.FloodWaitError as exc:
             await _abort(ctx, event.sender_id)
-            await event.respond(f"请求过于频繁，请 {exc.seconds} 秒后再试。")
+            await event.respond(
+                tr(
+                    lang,
+                    f"Too many requests. Please wait {exc.seconds} seconds before trying again.",
+                    f"请求过于频繁，请 {exc.seconds} 秒后再试。",
+                )
+            )
             return True
         session.phone, session.phone_code_hash, session.stage = phone, sent.phone_code_hash, "code"
-        prompt, buttons = _keypad("")
+        prompt, buttons = _keypad("", lang)
         await event.respond(prompt, buttons=buttons)
         return True
 
@@ -137,7 +180,7 @@ async def handle_login_text(event: Any, ctx: AppContext) -> bool:
             session.digits = digits
             await _submit_code(event, ctx, session)
         else:
-            await event.respond("请使用上方键盘输入验证码。")
+            await event.respond(tr(lang, "Please use the inline keypad above to enter the code.", "请使用上方键盘输入验证码。"))
         return True
 
     if session.stage == "password":
@@ -146,9 +189,24 @@ async def handle_login_text(event: Any, ctx: AppContext) -> bool:
         except Exception:
             pass
         try:
-            await session.client.sign_in(password=text)
+            password = extract_secret_text(event, lang)
+        except ValueError as exc:
+            await event.respond(
+                f"⚠️ {esc(exc)}",
+                buttons=[[Button.inline(tr(lang, "✖️ Cancel Login", "✖️ 取消登录"), b"lg:x")]],
+            )
+            return True
+        try:
+            await session.client.sign_in(password=password)
         except errors.PasswordHashInvalidError:
-            await event.respond("两步验证密码错误，请重新发送。")
+            await event.respond(
+                tr(
+                    lang,
+                    "Incorrect 2FA password. Please resend (wrap in `backticks` if it contains _, *, or ~).",
+                    "两步验证密码错误，请重新发送（若含 _、*、~ 等符号请用 `反引号` 包裹）。",
+                ),
+                buttons=[[Button.inline(tr(lang, "✖️ Cancel Login", "✖️ 取消登录"), b"lg:x")]],
+            )
             return True
         await _finish(event, ctx, session)
         return True
@@ -156,47 +214,62 @@ async def handle_login_text(event: Any, ctx: AppContext) -> bool:
 
 
 async def _submit_code(event: Any, ctx: AppContext, session: LoginSession) -> None:
+    lang = ctx.lang
     try:
         await session.client.sign_in(session.phone, session.digits, phone_code_hash=session.phone_code_hash)
     except errors.SessionPasswordNeededError:
         session.stage = "password"
-        await event.respond("🔑 该账号开启了两步验证，请发送密码（消息读取后立即删除）。")
+        await event.respond(
+            tr(
+                lang,
+                "🔑 Two-step verification (2FA) is enabled. Please send your password (message is deleted immediately).\n"
+                "💡 <i>Tip: Wrap in backticks like <code>`password`</code> if it contains <code>_</code>, <code>*</code>, or <code>~</code>.</i>",
+                "🔑 该账号开启了两步验证，请发送密码（消息读取后立即删除）。\n"
+                "💡 <i>提示：若密码含 <code>_</code>、<code>*</code>、<code>~</code> 等特殊符号，请用反引号包裹发送（如 <code>`密码`</code>）。</i>",
+            ),
+            buttons=[[Button.inline(tr(lang, "✖️ Cancel Login", "✖️ 取消登录"), b"lg:x")]],
+        )
         return
     except (errors.PhoneCodeInvalidError, errors.PhoneCodeEmptyError):
         session.digits = ""
-        prompt, buttons = _keypad("")
-        await event.respond("验证码错误，请重新输入。\n" + prompt, buttons=buttons)
+        prompt, buttons = _keypad("", lang)
+        header = tr(lang, "Invalid verification code. Please try again.\n", "验证码错误，请重新输入。\n")
+        await event.respond(header + prompt, buttons=buttons)
         return
     except errors.PhoneCodeExpiredError:
         await _abort(ctx, event.sender_id)
-        await event.respond("验证码已过期，请重新 /login。")
+        await event.respond(tr(lang, "Verification code expired. Please send /login again.", "验证码已过期，请重新 /login。"))
         return
     await _finish(event, ctx, session)
 
 
 async def on_keypad(event: Any, ctx: AppContext) -> None:
+    lang = ctx.lang
+    action = event.data.decode().split(":")
+    if action[1] == "x":
+        await _abort(ctx, event.sender_id)
+        await event.edit(
+            tr(lang, "Login cancelled.", "已取消登录。"),
+            buttons=[[back_button(b"m:home", lang=lang)]],
+        )
+        return
     session: LoginSession | None = ctx.state.login.get(event.sender_id)
     if session is None or session.stage != "code" or session.expired:
-        await event.answer("登录会话已结束", alert=True)
+        await event.answer(tr(lang, "Login session has ended", "登录会话已结束"), alert=True)
         return
-    action = event.data.decode().split(":")
     if action[1] == "d":
         if len(session.digits) < 8:
             session.digits += action[2]
     elif action[1] == "bk":
         session.digits = session.digits[:-1]
-    elif action[1] == "x":
-        await _abort(ctx, event.sender_id)
-        await event.edit("已取消登录。")
-        return
     elif action[1] == "ok":
         if len(session.digits) < 5:
-            await event.answer("验证码至少 5 位", alert=True)
+            await event.answer(tr(lang, "Code must be at least 5 digits", "验证码至少 5 位"), alert=True)
             return
-        await event.edit("⏳ 正在验证…")
+        await event.edit(tr(lang, "⏳ Verifying…", "⏳ 正在验证…"))
         await _submit_code(event, ctx, session)
         return
-    prompt, buttons = _keypad(session.digits)
+    prompt, buttons = _keypad(session.digits, lang)
     await event.edit(prompt, buttons=buttons)
 
 
