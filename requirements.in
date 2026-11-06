@@ -1,0 +1,30 @@
+# Direct dependencies. The Docker image installs the fully pinned, hash-locked
+# requirements.txt generated from this file:
+#
+#   pip-compile --generate-hashes --allow-unsafe -o requirements.txt requirements.in
+#
+# Only well-known, actively maintained upstream projects are used. Do not add
+# unofficial forks or "helper" plugins that would see the Telegram sessions.
+
+# Telegram MTProto client (LonamiWebs/Telethon, 1.x stable line)
+Telethon~=1.45
+# Native AES acceleration recommended by Telethon (published by the same author)
+cryptg~=0.5
+# SOCKS5 / HTTP CONNECT proxy support for Telethon
+python-socks[asyncio]~=2.7
+
+# Database layer: SQLite by default, PostgreSQL/MySQL optional
+SQLAlchemy[asyncio]~=2.0.40
+aiosqlite~=0.21
+asyncpg~=0.30
+aiomysql~=0.2
+
+# WebDAV transfers (with SOCKS support)
+httpx[socks]~=0.28
+
+# Encryption of stored secrets (WebDAV passwords)
+cryptography>=44
+
+# YAML import/export and .env loading
+PyYAML~=6.0
+python-dotenv~=1.0

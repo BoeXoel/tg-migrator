@@ -1,0 +1,374 @@
+"""Background queue consumer."""
+
+from __future__ import annotations
+
+import asyncio
+import logging
+from dataclasses import dataclass, field
+from datetime import datetime, timedelta
+from typing import Any
+
+from telethon.tl import types
+
+from app.config import BootstrapConfig
+from app.db.models import Job, utcnow
+from app.db.repository import Repository
+from app.engine.filters import ContentFilter, Rule
+from app.engine.notifier import Notifier
+from app.engine.storage_guard import StorageGuard
+from app.errors import (
+    AccountRestrictedError,
+    DeferredJobError,
+    PauseWorkerError,
+    PeerUnresolvedError,
+    PermanentJobError,
+    ReaderUnavailableError,
+    RetryableJobError,
+    compact_error,
+)
+from app.settings_store import SettingsStore, effective_settings
+from app.targets.base import DeliveryContext, DeliveryResult
+from app.targets.dispatcher import TargetDispatcher
+from app.telegram import media_helper as mh
+from app.telegram.client_manager import ClientManager
+from app.telegram.errors_map import (
+    ACCOUNT_RESTRICTED_ERRORS,
+    AUTH_LOST_ERRORS,
+    BAD_REQUEST_ERRORS,
+    PEER_INVALID_ERRORS,
+    PERMISSION_ERRORS,
+    RETRYABLE_TELEGRAM_ERRORS,
+    SOURCE_MISSING_ERRORS,
+)
+from app.telegram.limiter import TelegramLimiter
+
+log = logging.getLogger("migrator.worker")
+
+
+@dataclass
+class ActiveJob:
+    job_id: int
+    target_name: str
+    source: str
+    phase: str
+    started_at: datetime = field(default_factory=utcnow)
+
+
+class Worker:
+    def __init__(
+        self,
+        boot: BootstrapConfig,
+        clients: ClientManager,
+        limiter: TelegramLimiter,
+        repo: Repository,
+        store: SettingsStore,
+        dispatcher: TargetDispatcher,
+        notifier: Notifier,
+    ) -> None:
+        self.boot = boot
+        self.clients = clients
+        self.limiter = limiter
+        self.repo = repo
+        self.store = store
+        self.dispatcher = dispatcher
+        self.notifier = notifier
+        self.wake_event = asyncio.Event()
+        self.paused = False
+        self.pause_reason: str | None = None
+        self.active: dict[int, ActiveJob] = {}
+        self.processed_since_pause = 0
+        self.batch_pause_until: datetime | None = None
+        self._stopping = False
+        self._task: asyncio.Task | None = None
+
+    # ---------------------------------------------------------------- control
+
+    def wake(self) -> None:
+        self.wake_event.set()
+
+    async def load_state(self) -> None:
+        self.paused = bool(await self.repo.get_state("worker_paused", False))
+        self.pause_reason = await self.repo.get_state("worker_pause_reason", None)
+
+    async def pause(self, reason: str = "Paused by admin") -> None:
+        self.paused = True
+        self.pause_reason = reason
+        await self.repo.set_state("worker_paused", True)
+        await self.repo.set_state("worker_pause_reason", reason)
+
+    async def resume(self) -> None:
+        self.paused = False
+        self.pause_reason = None
+        self.batch_pause_until = None
+        await self.repo.set_state("worker_paused", False)
+        await self.repo.set_state("worker_pause_reason", None)
+        self.wake()
+
+    def start(self) -> None:
+        if self._task is None or self._task.done():
+            self._task = asyncio.create_task(self.run(), name="worker")
+
+    async def stop(self) -> None:
+        self._stopping = True
+        self.wake()
+        if self._task:
+            self._task.cancel()
+
+    async def _sleep(self, seconds: float, *, wakeable: bool = True) -> None:
+        if seconds <= 0:
+            return
+        if not wakeable:
+            await asyncio.sleep(seconds)
+            return
+        try:
+            await asyncio.wait_for(self.wake_event.wait(), timeout=seconds)
+        except asyncio.TimeoutError:
+            pass
+        self.wake_event.clear()
+
+    # ------------------------------------------------------------------- loop
+
+    async def run(self) -> None:
+        recovered = await self.repo.recover_in_progress()
+        if recovered:
+            log.info("Recovered %s interrupted job(s)", recovered)
+        guard = StorageGuard(self.boot.active_dir, self.boot.failed_dir, self.store.current.downloads)
+        removed = guard.cleanup_active() + guard.prune_failed()
+        if removed:
+            log.info("Removed %s stale download directories", removed)
+
+        while not self._stopping:
+            settings = self.store.current
+            if self.paused or self.clients.reader is None:
+                await self._sleep(settings.worker.idle_sleep_seconds)
+                continue
+            if self.batch_pause_until and utcnow() < self.batch_pause_until:
+                remaining = (self.batch_pause_until - utcnow()).total_seconds()
+                await self._sleep(min(remaining, 60), wakeable=False)
+                continue
+            self.batch_pause_until = None
+
+            batch_size = settings.worker.batch_size
+            jobs = await self.repo.fetch_due_jobs(max(1, batch_size - self.processed_since_pause))
+            if not jobs:
+                await self._sleep(await self._idle_timeout(settings.worker.idle_sleep_seconds))
+                continue
+
+            semaphore = asyncio.Semaphore(max(1, settings.worker.concurrency))
+
+            async def run_one(job: Job) -> None:
+                async with semaphore:
+                    if self.paused or self._stopping:
+                        return
+                    await self.process(job)
+
+            await asyncio.gather(*(run_one(job) for job in jobs))
+            self.processed_since_pause += len(jobs)
+            if self.processed_since_pause >= batch_size:
+                self.processed_since_pause = 0
+                pause = settings.worker.pause_between_batches_seconds
+                if pause > 0:
+                    log.info("Batch of %s finished; pausing %ss (worker.pause_between_batches_seconds)", batch_size, pause)
+                    self.batch_pause_until = utcnow() + timedelta(seconds=pause)
+
+    async def _idle_timeout(self, default: int) -> float:
+        next_retry = await self.repo.next_retry_time()
+        if next_retry is None:
+            return default
+        return max(1.0, min(default, (next_retry - utcnow()).total_seconds()))
+
+    # -------------------------------------------------------------- one job
+
+    async def process(self, job: Job) -> None:
+        attempts = await self.repo.claim_job(job.id)
+        if attempts is None:
+            return
+        target = await self.repo.get_target(job.target_id)
+        active = ActiveJob(job.id, target.name if target else "?", f"{job.source_title or job.source_chat_id}#{job.source_message_id}", "downloading")
+        self.active[job.id] = active
+
+        async def on_phase(phase: str) -> None:
+            active.phase = phase
+            await self.repo.update_job(job.id, status=phase)
+
+        try:
+            if target is None:
+                await self.repo.mark_skipped(job.id, "Target was deleted", reason_code="target_missing")
+                return
+            if not target.enabled:
+                await self.repo.defer_job(job.id, "Target is disabled", reason_code="target_disabled", retry_after_seconds=3600)
+                return
+            result = await self._deliver(job, target, on_phase)
+            if result.status == "done":
+                await self.repo.mark_done(
+                    job.id,
+                    dest_message_ids=result.dest_message_ids,
+                    transfer_route=result.transfer_route or target.type,
+                    remote_uri=result.remote_uri,
+                    writer_identity=result.writer_identity,
+                    upload_limit_bytes=result.upload_limit_bytes,
+                    reason_code=result.reason_code,
+                )
+                log.info("Job %s -> %s done (%s)", job.id, target.name, result.transfer_route)
+            else:
+                await self.repo.mark_skipped(
+                    job.id, result.reason, reason_code=result.reason_code, transfer_route=result.transfer_route
+                )
+                if result.writer_identity:
+                    await self.repo.update_job(
+                        job.id, writer_identity=result.writer_identity, upload_limit_bytes=result.upload_limit_bytes
+                    )
+                log.info("Job %s skipped: %s", job.id, result.reason)
+        except Exception as exc:  # noqa: BLE001 - classified below
+            await self._handle_error(job, attempts, exc)
+        finally:
+            self.active.pop(job.id, None)
+            if job.task_id:
+                await self._maybe_finish_task(job.task_id)
+
+    async def _deliver(self, job: Job, target: Any, on_phase: Any) -> DeliveryResult:
+        route = await self.repo.get_route(job.route_id) if job.route_id else None
+        settings = effective_settings(self.store.current, route.overrides if route else None)
+        reader = self.clients.require_reader()
+        source_entity = await self.clients.resolve(reader, job.source_chat_id)
+        loaded = await self.limiter.call("read", reader.get_messages, source_entity, ids=list(job.source_message_ids))
+        if not isinstance(loaded, list):
+            loaded = [loaded]
+        messages = [m for m in loaded if m is not None and not isinstance(m, types.MessageService)]
+        if not messages:
+            return DeliveryResult("skipped", reason="Source message(s) no longer exist", reason_code="source_missing")
+
+        rules = [Rule(r.id, r.rule_type, r.pattern) for r in await self.repo.list_filters(enabled_only=True)]
+        content_filter = ContentFilter(rules, enabled=settings.filters.enabled, case_sensitive=settings.filters.case_sensitive)
+        match = content_filter.match_texts(mh.message_text(m) for m in messages)
+        if match:
+            return DeliveryResult("skipped", reason=match.reason, reason_code=match.reason_code)
+
+        include = settings.transfer.include
+        messages = [m for m in messages if getattr(include, mh.include_flag(mh.media_kind(m)), False)]
+        if not messages:
+            return DeliveryResult("skipped", reason="All message types are disabled", reason_code="type_disabled")
+
+        ctx = DeliveryContext(
+            job=job,
+            target=target,
+            target_config=self.repo.decrypt_config(target.config),
+            messages=messages,
+            settings=settings,
+            stop_event=_StopFlag(self),
+            on_phase=on_phase,
+            source_entity=source_entity,
+            source_username=getattr(source_entity, "username", None),
+        )
+        return await self.dispatcher.deliver(ctx)
+
+    async def _handle_error(self, job: Job, attempts: int, exc: BaseException) -> None:
+        settings = self.store.current
+        error = compact_error(exc)
+
+        if isinstance(exc, ACCOUNT_RESTRICTED_ERRORS):
+            exc = AccountRestrictedError(
+                "Telegram restricted the account (PeerFlood/UserRestricted)",
+                retry_after_seconds=settings.limits.account_restricted_retry_seconds,
+            )
+        elif isinstance(exc, AUTH_LOST_ERRORS):
+            await self.repo.defer_job(job.id, error, reason_code="auth_lost", retry_after_seconds=60)
+            await self.pause(f"Telegram session invalid: {exc.__class__.__name__}")
+            await self.notifier.notify(
+                f"🛑 账号会话失效（{exc.__class__.__name__}），队列已暂停。请用 /login 重新登录后 /resume。",
+                key="auth_lost",
+            )
+            return
+        elif isinstance(exc, PEER_INVALID_ERRORS):
+            exc = PeerUnresolvedError(f"target of job {job.id}")
+
+        if isinstance(exc, ReaderUnavailableError):
+            await self.repo.defer_job(job.id, error, reason_code=exc.reason_code, retry_after_seconds=exc.retry_after_seconds)
+            return
+        if isinstance(exc, AccountRestrictedError):
+            await self.repo.defer_job(job.id, compact_error(exc), reason_code=exc.reason_code, retry_after_seconds=exc.retry_after_seconds)
+            await self.pause(str(exc))
+            await self.notifier.notify(
+                "🛑 Telegram 对账号施加了限制（PeerFlood/UserRestricted），队列已暂停，不会自动切换账号。"
+                "请确认账号状态后发送 /resume。",
+                key="account_restricted",
+            )
+            return
+        if isinstance(exc, PeerUnresolvedError):
+            await self.repo.defer_job(job.id, compact_error(exc), reason_code=exc.reason_code, retry_after_seconds=600)
+            await self.notifier.notify(
+                f"⚠️ 写入账号无法识别目标会话（任务 {job.id}）。请把 Bot 加入目标群/频道，并在其中发送 /bind。",
+                key=f"peer:{job.target_id}",
+            )
+            return
+        if isinstance(exc, PauseWorkerError):
+            await self.repo.defer_job(job.id, compact_error(exc), reason_code=exc.reason_code, retry_after_seconds=exc.retry_after_seconds)
+            await self.pause(str(exc))
+            await self.notifier.notify(f"🛑 队列已暂停：{exc}", key=f"pause:{exc.reason_code}")
+            return
+        if isinstance(exc, DeferredJobError):
+            await self.repo.defer_job(job.id, error, reason_code=exc.reason_code, retry_after_seconds=exc.retry_after_seconds)
+            log.warning("Job %s deferred %ss: %s", job.id, exc.retry_after_seconds, exc)
+            if exc.reason_code in {"disk_low", "disk_full"}:
+                await self.notifier.notify(f"💾 磁盘空间不足，任务已推迟：{exc}", key="disk")
+            return
+        if isinstance(exc, PermanentJobError):
+            await self.repo.mark_skipped(job.id, error, reason_code=exc.reason_code or "permanent")
+            log.warning("Job %s skipped: %s", job.id, exc)
+            return
+        if isinstance(exc, SOURCE_MISSING_ERRORS):
+            await self.repo.mark_skipped(job.id, error, reason_code="source_missing")
+            return
+        if isinstance(exc, PERMISSION_ERRORS):
+            await self.repo.mark_skipped(job.id, error, reason_code="permission_denied")
+            await self.notifier.notify(f"⚠️ 权限不足，任务 {job.id} 已跳过：{error}", key=f"perm:{job.target_id}")
+            return
+
+        retryable = isinstance(exc, (RetryableJobError, ConnectionError, OSError, asyncio.TimeoutError) + RETRYABLE_TELEGRAM_ERRORS)
+        if isinstance(exc, BAD_REQUEST_ERRORS) and not retryable:
+            await self.repo.mark_skipped(job.id, error, reason_code="telegram_bad_request")
+            log.warning("Job %s skipped by Telegram: %s", job.id, exc)
+            return
+
+        reason_code = getattr(exc, "reason_code", None) or ("network_error" if retryable else "unexpected_error")
+        status = await self.repo.mark_failure(
+            job.id,
+            error,
+            attempts=attempts,
+            max_attempts=settings.queue.max_attempts,
+            backoff=settings.queue.retry_backoff_seconds,
+            reason_code=reason_code,
+        )
+        if retryable:
+            log.warning("Job %s %s after error: %s", job.id, status, error)
+        else:
+            log.exception("Job %s %s after unexpected error", job.id, status, exc_info=exc)
+
+    async def _maybe_finish_task(self, task_id: int) -> None:
+        task = await self.repo.finish_task_if_complete(task_id)
+        if task is None:
+            return
+        counts = await self.repo.task_job_counts(task_id)
+        text = (
+            f"✅ 任务 #{task.id} 完成：{task.source_title or task.source_chat_id}\n"
+            f"成功 {counts.get('done', 0)} · 跳过 {counts.get('skipped', 0)} · 失败 {counts.get('failed', 0)}"
+        )
+        await self.notifier.notify(text, chat_id=task.notify_chat_id)
+
+    def status_lines(self) -> list[str]:
+        lines = []
+        for item in self.active.values():
+            lines.append(f"▶️ #{item.job_id} {item.source} → {item.target_name}（{item.phase}）")
+        if self.batch_pause_until:
+            lines.append(f"⏸ 批次间歇至 {self.batch_pause_until:%H:%M:%S} UTC")
+        return lines
+
+
+class _StopFlag:
+    """asyncio.Event-like view of the worker stop state."""
+
+    def __init__(self, worker: Worker) -> None:
+        self._worker = worker
+
+    def is_set(self) -> bool:
+        return self._worker._stopping
