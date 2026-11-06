@@ -1,0 +1,26 @@
+name: Feature Request
+description: Suggest an enhancement or new capability
+title: "[Feature]: "
+labels: ["enhancement"]
+body:
+  - type: textarea
+    id: problem
+    attributes:
+      label: Use Case / Problem Statement
+      description: What scenario or problem are you trying to solve?
+    validations:
+      required: true
+
+  - type: textarea
+    id: solution
+    attributes:
+      label: Proposed Solution
+      description: Describe how you envision this feature working (e.g., Bot commands, settings, target behavior).
+    validations:
+      required: true
+
+  - type: textarea
+    id: alternatives
+    attributes:
+      label: Alternatives Considered
+      description: Any workarounds or alternative designs you have considered (optional).

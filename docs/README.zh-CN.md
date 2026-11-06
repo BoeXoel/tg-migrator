@@ -1,6 +1,6 @@
 # TG Migrator
 
-[English](../README.md) | **简体中文** | [Docker Hub (`boexoel/tg-migrator`)](https://hub.docker.com/r/boexoel/tg-migrator)
+[English](../README.md) | **简体中文** | [Docker](https://hub.docker.com/r/boexoel/tg-migrator)
 
 > **通过 Telegram Bot 交互管控的自托管消息归档与多端路由服务**
 > 支持将你拥有合法访问权限的 Telegram 群组、频道或论坛 Topic 消息，同步与结构化归档至 **其他 Telegram 会话**、**本地 NAS 目录** 或 **WebDAV 存储（Alist / Nextcloud 等）**，兼顾一次性历史迁移与 7×24 小时实时监听同步。
@@ -24,6 +24,13 @@
 ---
 
 ## 快速开始（Docker 部署）
+
+> [!IMPORTANT]
+> **前置准备：所需 Telegram 凭据（用于填写 `.env`）**
+> 在启动服务前，请提前准备好以下三项凭据信息：
+> - **`API_ID` 与 `API_HASH`**：使用手机号登录 [my.telegram.org](https://my.telegram.org)，进入 **API development tools** 创建一个应用即可获取。
+> - **`BOT_TOKEN`**：在 Telegram 中私聊官方 [@BotFather](https://t.me/BotFather)，发送 `/newbot` 创建一个用于控制服务的 Bot 并获取其 Token。
+> - **`ADMIN_IDS`**：你个人的 Telegram 纯数字用户 ID（支持多个，用英文逗号分隔），可通过私聊 [@userinfobot](https://t.me/userinfobot) 等机器人查询获取。
 
 ### 方式一：使用 Docker Hub 预构建镜像（推荐）
 
