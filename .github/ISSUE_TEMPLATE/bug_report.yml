@@ -1,0 +1,67 @@
+name: Bug Report
+description: Report a reproducible bug or unexpected behavior
+title: "[Bug]: "
+labels: ["bug"]
+body:
+  - type: markdown
+    attributes:
+      value: |
+        > **Security Warning**: Never paste your `BOT_TOKEN`, `API_HASH`, WebDAV passwords, or `.session` files here.
+
+  - type: dropdown
+    id: deployment
+    attributes:
+      label: Deployment Method
+      options:
+        - Docker Hub Image (boexoel/tg-migrator)
+        - Local Docker Build (Dockerfile)
+        - Bare Metal / Local Python
+    validations:
+      required: true
+
+  - type: input
+    id: version
+    attributes:
+      label: Image Tag / Commit Version
+      description: e.g., `0.0.1`, `latest`, or commit SHA
+      placeholder: "0.0.1"
+    validations:
+      required: true
+
+  - type: dropdown
+    id: database
+    attributes:
+      label: Database Backend
+      options:
+        - SQLite (default)
+        - PostgreSQL
+        - MySQL / MariaDB
+    validations:
+      required: true
+
+  - type: dropdown
+    id: target_type
+    attributes:
+      label: Target Sink Involved
+      options:
+        - Telegram (Group / Channel / Forum Topic)
+        - Local Directory
+        - WebDAV
+        - N/A (Bot UI / Login / Config)
+    validations:
+      required: true
+
+  - type: textarea
+    id: description
+    attributes:
+      label: What happened?
+      description: Clear description of the bug and the steps to reproduce it.
+    validations:
+      required: true
+
+  - type: textarea
+    id: logs
+    attributes:
+      label: Relevant Container Logs (Redacted)
+      description: Output from `docker compose logs` around the time of the error.
+      render: shell

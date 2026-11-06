@@ -1,6 +1,6 @@
 # TG Migrator
 
-**English** | [简体中文](docs/README.zh-CN.md) | [Docker Hub (`boexoel/tg-migrator`)](https://hub.docker.com/r/boexoel/tg-migrator)
+**English** | [简体中文](docs/README.zh-CN.md) | [Docker](https://hub.docker.com/r/boexoel/tg-migrator)
 
 > **Self-Hosted Telegram Media Archiver & Multi-Sink Message Router Controlled via Telegram Bot**
 > Synchronize and archive messages from Telegram groups, channels, or Forum Topics that you have legitimate access to into **other Telegram chats**, **local NAS directories**, or **WebDAV storage (Alist / Nextcloud / etc.)** — supporting both one-off historical migrations and 24/7 real-time watch routing.
@@ -24,6 +24,13 @@
 ---
 
 ## Quick Start (Docker Deployment)
+
+> [!IMPORTANT]
+> **Prerequisites — Required Telegram Credentials (for `.env`)**
+> Before starting the service, prepare the following three credentials:
+> - **`API_ID` & `API_HASH`**: Log in to [my.telegram.org](https://my.telegram.org) and create an application under **API development tools** to obtain them.
+> - **`BOT_TOKEN`**: Message [@BotFather](https://t.me/BotFather) on Telegram and send `/newbot` to create a control Bot and obtain its HTTP API token.
+> - **`ADMIN_IDS`**: Your personal numeric Telegram User ID (comma-separated for multiple admins), obtainable by messaging bots such as [@userinfobot](https://t.me/userinfobot).
 
 ### Option 1: Deploy with Pre-Built Docker Hub Image (Recommended)
 
