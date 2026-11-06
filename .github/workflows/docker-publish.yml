@@ -31,11 +31,9 @@ jobs:
     runs-on: ubuntu-latest
     permissions:
       contents: read
-      packages: write
     outputs:
-      dockerhub_enabled: ${{ steps.targets.outputs.dockerhub_enabled }}
       dockerhub_repo: ${{ steps.targets.outputs.dockerhub_repo }}
-      ghcr_repo: ${{ steps.targets.outputs.ghcr_repo }}
+      app_version: ${{ steps.targets.outputs.app_version }}
 
     steps:
       - name: Checkout repository
@@ -47,7 +45,7 @@ jobs:
       - name: Set up Docker Buildx
         uses: docker/setup-buildx-action@v3
 
-      - name: Resolve target registries & sanitize credentials
+      - name: Resolve Docker Hub target & version
         id: targets
         env:
           RAW_DH_USER_SECRET: ${{ secrets.DOCKERHUB_USERNAME }}
@@ -55,77 +53,52 @@ jobs:
           RAW_DH_TOKEN: ${{ secrets.DOCKERHUB_TOKEN }}
           DH_REPO: ${{ vars.DOCKERHUB_REPO }}
         run: |
-          GHCR_REPO=$(echo "ghcr.io/${GITHUB_REPOSITORY}" | tr '[:upper:]' '[:lower:]')
-          echo "ghcr_repo=${GHCR_REPO}" >> "$GITHUB_OUTPUT"
+          APP_VER=$(python3 -c 'import re, pathlib; m = re.search(r"__version__\s*=\s*[\"\x27]([^\"\x27]+)[\"\x27]", pathlib.Path("app/__init__.py").read_text()); print(m.group(1) if m else "0.0.1")')
+          echo "app_version=${APP_VER}" >> "$GITHUB_OUTPUT"
+          echo "Application version detected from app/__init__.py: ${APP_VER}"
 
           RAW_USER="${RAW_DH_USER_SECRET:-$RAW_DH_USER_VAR}"
-          # If user pasted 'docker login -u <username>', extract just the username
           if printf '%s' "$RAW_USER" | grep -Eq 'docker[[:space:]]+login'; then
             RAW_USER=$(printf '%s' "$RAW_USER" | sed -E 's/.*-u[[:space:]]+([^[:space:]]+).*/\1/')
           fi
-          # Strip whitespace, control chars, quotes, and lowercase Docker ID
           DH_USER=$(printf '%s' "$RAW_USER" | tr -d '[:space:][:cntrl:]"'"'" | tr '[:upper:]' '[:lower:]')
 
-          # Extract dckr_pat_... token if present, otherwise strip whitespace/control chars/quotes
           if printf '%s' "$RAW_DH_TOKEN" | grep -Eo 'dckr_pat_[A-Za-z0-9_-]+' >/dev/null 2>&1; then
             DH_TOKEN=$(printf '%s' "$RAW_DH_TOKEN" | grep -Eo 'dckr_pat_[A-Za-z0-9_-]+' | head -n 1)
           else
             DH_TOKEN=$(printf '%s' "$RAW_DH_TOKEN" | sed -E 's/^[Bb]earer[[:space:]]+//' | tr -d '[:space:][:cntrl:]"'"'")
           fi
 
-          if [ -n "$DH_USER" ] && [ -n "$DH_TOKEN" ]; then
-            echo "::add-mask::${DH_TOKEN}"
-            USER_LEN=${#DH_USER}
-            TOKEN_LEN=${#DH_TOKEN}
-            echo "Docker Hub username resolved: '${DH_USER}' (length=${USER_LEN})"
-            if printf '%s' "$DH_TOKEN" | grep -q '^dckr_pat_'; then
-              echo "Docker Hub token format verified: dckr_pat_*** (length=${TOKEN_LEN})"
-            else
-              echo "::warning::DOCKERHUB_TOKEN does not start with 'dckr_pat_' (length=${TOKEN_LEN}). Make sure it is a valid Docker Hub Personal Access Token."
-            fi
-            if printf '%s' "$DH_USER" | grep -q '@'; then
-              echo "::error::DOCKERHUB_USERNAME ('${DH_USER}') contains '@'. Please use your Docker Hub ID (username), not your email address."
-              exit 1
-            fi
-
-            echo "dockerhub_enabled=true" >> "$GITHUB_OUTPUT"
-            echo "dh_user=${DH_USER}" >> "$GITHUB_OUTPUT"
-            echo "dh_token=${DH_TOKEN}" >> "$GITHUB_OUTPUT"
-            REPO_NAME=$(echo "${DH_REPO:-${DH_USER}/${GITHUB_REPOSITORY#*/}}" | tr -d '[:space:][:cntrl:]' | tr '[:upper:]' '[:lower:]')
-            echo "dockerhub_repo=${REPO_NAME}" >> "$GITHUB_OUTPUT"
-            {
-              echo "images<<EOF"
-              echo "${REPO_NAME}"
-              echo "${GHCR_REPO}"
-              echo "EOF"
-            } >> "$GITHUB_OUTPUT"
-          else
-            echo "dockerhub_enabled=false" >> "$GITHUB_OUTPUT"
-            echo "images=${GHCR_REPO}" >> "$GITHUB_OUTPUT"
+          if [ -z "$DH_USER" ] || [ -z "$DH_TOKEN" ]; then
+            echo "::error::DOCKERHUB_USERNAME and DOCKERHUB_TOKEN must be configured in repository secrets."
+            exit 1
           fi
 
+          echo "::add-mask::${DH_TOKEN}"
+          echo "dh_user=${DH_USER}" >> "$GITHUB_OUTPUT"
+          echo "dh_token=${DH_TOKEN}" >> "$GITHUB_OUTPUT"
+
+          REPO_NAME=$(echo "${DH_REPO:-${DH_USER}/tg-migrator}" | tr -d '[:space:][:cntrl:]' | tr '[:upper:]' '[:lower:]')
+          echo "dockerhub_repo=${REPO_NAME}" >> "$GITHUB_OUTPUT"
+          echo "Target Docker Hub repository: ${REPO_NAME}"
+
       - name: Log in to Docker Hub
-        if: steps.targets.outputs.dockerhub_enabled == 'true'
         uses: docker/login-action@v3
         with:
           username: ${{ steps.targets.outputs.dh_user }}
           password: ${{ steps.targets.outputs.dh_token }}
 
-      - name: Log in to GitHub Container Registry
-        uses: docker/login-action@v3
-        with:
-          registry: ghcr.io
-          username: ${{ github.actor }}
-          password: ${{ secrets.GITHUB_TOKEN }}
-
       - name: Extract Docker metadata (tags & labels)
         id: meta
         uses: docker/metadata-action@v5
         with:
-          images: ${{ steps.targets.outputs.images }}
+          images: ${{ steps.targets.outputs.dockerhub_repo }}
           tags: |
             type=raw,value=latest,enable={{is_default_branch}}
+            type=raw,value=${{ steps.targets.outputs.app_version }},enable={{is_default_branch}}
+            type=raw,value=v${{ steps.targets.outputs.app_version }},enable={{is_default_branch}}
             type=semver,pattern={{version}}
+            type=semver,pattern=v{{version}}
             type=semver,pattern={{major}}.{{minor}}
             type=sha
 
@@ -136,13 +109,13 @@ jobs:
           target: runtime
           platforms: linux/amd64,linux/arm64
           push: true
-          tags: ${{ steps.targets.outputs.images != '' && steps.meta.outputs.tags || '' }}
+          tags: ${{ steps.meta.outputs.tags }}
           labels: ${{ steps.meta.outputs.labels }}
           cache-from: type=gha
           cache-to: type=gha,mode=max
 
       - name: Sync README.md to Docker Hub description
-        if: steps.targets.outputs.dockerhub_enabled == 'true' && github.ref == 'refs/heads/main'
+        if: github.ref == 'refs/heads/main'
         continue-on-error: true
         uses: peter-evans/dockerhub-description@v4
         with:
@@ -164,20 +137,15 @@ jobs:
 
       - name: Prepare deployment assets and release notes
         env:
-          TAG_NAME: ${{ github.ref_name }}
           VERSION: ${{ github.ref_name }}
-          DH_ENABLED: ${{ needs.build-and-push.outputs.dockerhub_enabled }}
           DH_REPO: ${{ needs.build-and-push.outputs.dockerhub_repo }}
-          GHCR_REPO: ${{ needs.build-and-push.outputs.ghcr_repo }}
         run: |
           CLEAN_VER="${VERSION#v}"
           {
-            echo "### Docker Images (\`linux/amd64\`, \`linux/arm64\`)"
+            echo "### Docker Hub Image (\`linux/amd64\`, \`linux/arm64\`)"
             echo ""
-            if [ "$DH_ENABLED" = "true" ]; then
-              echo "- **Docker Hub**: \`docker pull ${DH_REPO}:${CLEAN_VER}\`"
-            fi
-            echo "- **GHCR**: \`docker pull ${GHCR_REPO}:${CLEAN_VER}\`"
+            echo "- **Repository**: [${DH_REPO}](https://hub.docker.com/r/${DH_REPO})"
+            echo "- **Pull Command**: \`docker pull ${DH_REPO}:${CLEAN_VER}\`"
             echo ""
             echo "### Quick Deployment"
             echo "Download \`docker-compose.yml\` and \`.env.example\` from the release assets below, rename \`.env.example\` to \`.env\`, and start with \`docker compose up -d\`."
