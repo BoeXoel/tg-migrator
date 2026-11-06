@@ -11,7 +11,7 @@ from telethon import TelegramClient, events
 from app.bot import handlers_config, handlers_login, handlers_route, handlers_target, handlers_task
 from app.bot.auth import admin_only
 from app.bot.context import AppContext
-from app.bot.ui import command, esc
+from app.bot.ui import back_button, command, esc
 from app.telegram.link_parser import parse_request
 
 log = logging.getLogger("migrator.bot")
@@ -21,10 +21,27 @@ _COMMAND_RE = re.compile(r"^/[A-Za-z_]+(?:@\w+)?(?:\s|$)")
 
 
 async def cmd_cancel(event: Any, ctx: AppContext) -> None:
-    cancelled = ctx.state.wizards.cancel(event.sender_id)
+    wizard = ctx.state.wizards.cancel(event.sender_id)
+    cancelled = wizard is not None
     cancelled = await handlers_login.cancel_login(ctx, event.sender_id) or cancelled
     cancelled = ctx.state.import_modes.pop(event.sender_id, None) is not None or cancelled
-    await event.respond("已取消。" if cancelled else "当前没有进行中的操作。")
+    back_data = wizard.back_data if wizard is not None else b"m:home"
+    await event.respond(
+        ctx.t(
+            "Cancelled." if cancelled else "No active operation to cancel.",
+            "已取消。" if cancelled else "当前没有进行中的操作。",
+        ),
+        buttons=[[back_button(back_data, lang=ctx.lang)]],
+    )
+
+
+async def on_wizard_cancel(event: Any, ctx: AppContext) -> None:
+    wizard = ctx.state.wizards.cancel(event.sender_id)
+    back_data = wizard.back_data if wizard is not None else b"m:home"
+    await event.edit(
+        ctx.t("✖️ Cancelled.", "✖️ 已取消。"),
+        buttons=[[back_button(back_data, lang=ctx.lang)]],
+    )
 
 
 async def on_private_message(event: Any, ctx: AppContext) -> None:
@@ -49,7 +66,13 @@ async def on_private_message(event: Any, ctx: AppContext) -> None:
     if parsed is not None:
         await handlers_task.handle_link(event, ctx, parsed)
         return
-    await event.respond("发送消息链接即可创建搬运任务，/help 查看全部功能。")
+    await event.respond(
+        ctx.t(
+            "Send a Telegram message link to create a transfer task, or use /help to view all commands.",
+            "发送消息链接即可创建搬运任务，/help 查看全部功能。",
+        ),
+        buttons=[[back_button(b"m:home", lang=ctx.lang)]],
+    )
 
 
 def register_all(bot: TelegramClient, ctx: AppContext) -> None:
@@ -60,4 +83,5 @@ def register_all(bot: TelegramClient, ctx: AppContext) -> None:
     handlers_config.register(bot, ctx)
     handlers_login.register(bot, ctx)
     bot.add_event_handler(admin_only(ctx, cmd_cancel), events.NewMessage(pattern=command("cancel")))
+    bot.add_event_handler(admin_only(ctx, on_wizard_cancel), events.CallbackQuery(pattern=rb"^wiz:cancel$"))
     bot.add_event_handler(admin_only(ctx, on_private_message), events.NewMessage(func=lambda e: e.is_private))

@@ -49,6 +49,19 @@ def _split_csv(value: str | None) -> list[str]:
     return [item.strip() for item in value.replace(";", ",").split(",") if item.strip()]
 
 
+def normalize_lang(value: Any, *, default: str = "en") -> str:
+    """Normalise a language tag to ``en`` or ``zh``."""
+
+    if value is None or str(value).strip() == "":
+        return default
+    raw = str(value).strip().lower().replace("_", "-")
+    if raw in {"en", "en-us", "en-gb", "english", "英文", "英语"}:
+        return "en"
+    if raw in {"zh", "zh-cn", "zh-tw", "zh-hk", "zh-hans", "zh-hant", "cn", "chinese", "中文", "简体中文"}:
+        return "zh"
+    raise ValueError(f"Unsupported language {value!r}; must be 'en' or 'zh'")
+
+
 # ---------------------------------------------------------------------------
 # Bootstrap configuration (environment)
 # ---------------------------------------------------------------------------
@@ -171,6 +184,7 @@ class BootstrapConfig:
     log_level: str
     log_file: Path | None
     proxy: ProxyConfig
+    bot_lang: str = "en"
 
     @property
     def active_dir(self) -> Path:
@@ -255,6 +269,7 @@ def load_bootstrap(env: typing.Mapping[str, str] | None = None, *, require_bot: 
         log_level=(env.get("LOG_LEVEL") or "INFO").strip().upper(),
         log_file=Path(log_file_raw).resolve() if log_file_raw else None,
         proxy=ProxyConfig.from_env(env),
+        bot_lang=normalize_lang(env.get("BOT_LANG"), default="en"),
     )
 
 
@@ -381,6 +396,11 @@ class DownloadSettings:
 
 
 @dataclass
+class UISettings:
+    language: str = "en"  # en | zh
+
+
+@dataclass
 class RuntimeSettings:
     transfer: TransferSettings = field(default_factory=TransferSettings)
     archive: ArchiveSettings = field(default_factory=ArchiveSettings)
@@ -390,6 +410,7 @@ class RuntimeSettings:
     worker: WorkerSettings = field(default_factory=WorkerSettings)
     watch: WatchSettings = field(default_factory=WatchSettings)
     downloads: DownloadSettings = field(default_factory=DownloadSettings)
+    ui: UISettings = field(default_factory=UISettings)
 
 
 SECTION_NAMES = tuple(item.name for item in fields(RuntimeSettings))
@@ -399,6 +420,7 @@ CHOICES: dict[str, tuple[str, ...]] = {
     "archive.sidecar_format": ("json", "md", "both", "none"),
     "archive.folder_naming": ("title_id", "id", "title"),
     "archive.webdav_mode": ("auto", "stream", "spool"),
+    "ui.language": ("en", "zh"),
 }
 
 MINIMUMS: dict[str, float] = {
@@ -434,7 +456,10 @@ def _coerce(value: Any, annotation: Any, path: str) -> Any:
             raise ValueError(f"{path} must be a number")
         return float(value)
     if annotation is str:
-        return str(value).strip()
+        text = str(value).strip()
+        if path == "ui.language":
+            return normalize_lang(text)
+        return text
     if origin is list:
         (item_type,) = typing.get_args(annotation) or (str,)
         if isinstance(value, str):

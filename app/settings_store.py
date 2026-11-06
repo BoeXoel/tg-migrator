@@ -10,9 +10,11 @@ from app.db.repository import Repository
 
 
 class SettingsStore:
-    def __init__(self, repo: Repository) -> None:
+    def __init__(self, repo: Repository, *, default_language: str = "en") -> None:
         self.repo = repo
+        self.default_language = default_language
         self.current = RuntimeSettings()
+        self.current.ui.language = default_language
         self._lock = asyncio.Lock()
         self._listeners: list[Callable[[RuntimeSettings], Any]] = []
 
@@ -20,7 +22,7 @@ class SettingsStore:
         self._listeners.append(callback)
 
     async def load(self) -> RuntimeSettings:
-        self.current = await self.repo.load_settings()
+        self.current = await self.repo.load_settings(default_language=self.default_language)
         # Persist defaults on first start so exports show the full structure.
         await self.repo.save_settings(self.current)
         return self.current
