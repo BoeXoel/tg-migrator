@@ -1,0 +1,159 @@
+name: Build & Publish Docker Image
+
+on:
+  push:
+    branches: ["main"]
+    tags: ["v*.*.*"]
+  pull_request:
+    branches: ["main"]
+  workflow_dispatch:
+
+jobs:
+  test:
+    name: Unit Tests
+    runs-on: ubuntu-latest
+    steps:
+      - name: Checkout repository
+        uses: actions/checkout@v4
+
+      - name: Set up Docker Buildx
+        uses: docker/setup-buildx-action@v3
+
+      - name: Build and run test stage
+        run: |
+          docker build --target test -t tg-migrator:test .
+          docker run --rm tg-migrator:test
+
+  build-and-push:
+    name: Build & Push Multi-Arch Image
+    needs: test
+    if: github.event_name != 'pull_request'
+    runs-on: ubuntu-latest
+    permissions:
+      contents: read
+      packages: write
+    outputs:
+      dockerhub_enabled: ${{ steps.targets.outputs.dockerhub_enabled }}
+      dockerhub_repo: ${{ steps.targets.outputs.dockerhub_repo }}
+      ghcr_repo: ${{ steps.targets.outputs.ghcr_repo }}
+
+    steps:
+      - name: Checkout repository
+        uses: actions/checkout@v4
+
+      - name: Set up QEMU (for arm64 cross-build)
+        uses: docker/setup-qemu-action@v3
+
+      - name: Set up Docker Buildx
+        uses: docker/setup-buildx-action@v3
+
+      - name: Resolve target registries
+        id: targets
+        env:
+          DH_USER: ${{ secrets.DOCKERHUB_USERNAME }}
+          DH_TOKEN: ${{ secrets.DOCKERHUB_TOKEN }}
+          DH_REPO: ${{ vars.DOCKERHUB_REPO }}
+        run: |
+          GHCR_REPO=$(echo "ghcr.io/${GITHUB_REPOSITORY}" | tr '[:upper:]' '[:lower:]')
+          echo "ghcr_repo=${GHCR_REPO}" >> "$GITHUB_OUTPUT"
+          if [ -n "$DH_USER" ] && [ -n "$DH_TOKEN" ]; then
+            echo "dockerhub_enabled=true" >> "$GITHUB_OUTPUT"
+            REPO_NAME=$(echo "${DH_REPO:-${DH_USER}/${GITHUB_REPOSITORY#*/}}" | tr '[:upper:]' '[:lower:]')
+            echo "dockerhub_repo=${REPO_NAME}" >> "$GITHUB_OUTPUT"
+            {
+              echo "images<<EOF"
+              echo "${REPO_NAME}"
+              echo "${GHCR_REPO}"
+              echo "EOF"
+            } >> "$GITHUB_OUTPUT"
+          else
+            echo "dockerhub_enabled=false" >> "$GITHUB_OUTPUT"
+            echo "images=${GHCR_REPO}" >> "$GITHUB_OUTPUT"
+          fi
+
+      - name: Log in to Docker Hub
+        if: steps.targets.outputs.dockerhub_enabled == 'true'
+        uses: docker/login-action@v3
+        with:
+          username: ${{ secrets.DOCKERHUB_USERNAME }}
+          password: ${{ secrets.DOCKERHUB_TOKEN }}
+
+      - name: Log in to GitHub Container Registry
+        uses: docker/login-action@v3
+        with:
+          registry: ghcr.io
+          username: ${{ github.actor }}
+          password: ${{ secrets.GITHUB_TOKEN }}
+
+      - name: Extract Docker metadata (tags & labels)
+        id: meta
+        uses: docker/metadata-action@v5
+        with:
+          images: ${{ steps.targets.outputs.images }}
+          tags: |
+            type=raw,value=latest,enable={{is_default_branch}}
+            type=semver,pattern={{version}}
+            type=semver,pattern={{major}}.{{minor}}
+            type=sha
+
+      - name: Build and push runtime image (linux/amd64, linux/arm64)
+        uses: docker/build-push-action@v6
+        with:
+          context: .
+          target: runtime
+          platforms: linux/amd64,linux/arm64
+          push: true
+          tags: ${{ steps.meta.outputs.tags }}
+          labels: ${{ steps.meta.outputs.labels }}
+          cache-from: type=gha
+          cache-to: type=gha,mode=max
+
+      - name: Sync README.md to Docker Hub description
+        if: steps.targets.outputs.dockerhub_enabled == 'true' && github.ref == 'refs/heads/main'
+        uses: peter-evans/dockerhub-description@v4
+        with:
+          username: ${{ secrets.DOCKERHUB_USERNAME }}
+          password: ${{ secrets.DOCKERHUB_TOKEN }}
+          repository: ${{ steps.targets.outputs.dockerhub_repo }}
+          readme-filepath: ./README.md
+
+  release:
+    name: Create GitHub Release
+    needs: build-and-push
+    if: startsWith(github.ref, 'refs/tags/v')
+    runs-on: ubuntu-latest
+    permissions:
+      contents: write
+    steps:
+      - name: Checkout repository
+        uses: actions/checkout@v4
+
+      - name: Prepare deployment assets and release notes
+        env:
+          TAG_NAME: ${{ github.ref_name }}
+          VERSION: ${{ github.ref_name }}
+          DH_ENABLED: ${{ needs.build-and-push.outputs.dockerhub_enabled }}
+          DH_REPO: ${{ needs.build-and-push.outputs.dockerhub_repo }}
+          GHCR_REPO: ${{ needs.build-and-push.outputs.ghcr_repo }}
+        run: |
+          CLEAN_VER="${VERSION#v}"
+          {
+            echo "### Docker Images (\`linux/amd64\`, \`linux/arm64\`)"
+            echo ""
+            if [ "$DH_ENABLED" = "true" ]; then
+              echo "- **Docker Hub**: \`docker pull ${DH_REPO}:${CLEAN_VER}\`"
+            fi
+            echo "- **GHCR**: \`docker pull ${GHCR_REPO}:${CLEAN_VER}\`"
+            echo ""
+            echo "### Quick Deployment"
+            echo "Download \`docker-compose.yml\` and \`.env.example\` from the release assets below, rename \`.env.example\` to \`.env\`, and start with \`docker compose up -d\`."
+          } > release-notes-header.md
+
+      - name: Publish GitHub Release
+        uses: softprops/action-gh-release@v2
+        with:
+          body_path: release-notes-header.md
+          generate_release_notes: true
+          files: |
+            docker-compose.yml
+            .env.example

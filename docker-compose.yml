@@ -1,0 +1,65 @@
+# Default: SQLite inside ./data. For PostgreSQL or MySQL, start the matching
+# profile and set DATABASE_URL in .env:
+#
+#   docker compose --profile postgres up -d
+#   docker compose --profile mysql up -d
+
+services:
+  migrator:
+    build: .
+    image: tg-migrator:latest
+    container_name: tg-migrator
+    restart: unless-stopped
+    init: true
+    env_file: .env
+    # Host directories must be writable by this UID/GID (see README).
+    user: "${PUID:-1000}:${PGID:-1000}"
+    volumes:
+      - ./data:/app/data
+      - ./sessions:/app/sessions
+      - ./downloads:/app/downloads
+      - ./archive:/archive
+    read_only: true
+    tmpfs:
+      - /tmp
+    security_opt:
+      - no-new-privileges:true
+    cap_drop:
+      - ALL
+    logging:
+      driver: json-file
+      options:
+        max-size: "10m"
+        max-file: "3"
+
+  postgres:
+    image: postgres:17-alpine
+    profiles: ["postgres"]
+    restart: unless-stopped
+    environment:
+      POSTGRES_DB: ${POSTGRES_DB:-migrator}
+      POSTGRES_USER: ${POSTGRES_USER:-migrator}
+      POSTGRES_PASSWORD: ${POSTGRES_PASSWORD:?set POSTGRES_PASSWORD in .env}
+    volumes:
+      - ./pgdata:/var/lib/postgresql/data
+    healthcheck:
+      test: ["CMD-SHELL", "pg_isready -U $${POSTGRES_USER} -d $${POSTGRES_DB}"]
+      interval: 10s
+      retries: 5
+
+  mysql:
+    image: mysql:8.4
+    profiles: ["mysql"]
+    restart: unless-stopped
+    environment:
+      MYSQL_DATABASE: ${MYSQL_DATABASE:-migrator}
+      MYSQL_USER: ${MYSQL_USER:-migrator}
+      MYSQL_PASSWORD: ${MYSQL_PASSWORD:?set MYSQL_PASSWORD in .env}
+      MYSQL_RANDOM_ROOT_PASSWORD: "yes"
+    command: ["--character-set-server=utf8mb4", "--collation-server=utf8mb4_unicode_ci"]
+    volumes:
+      - ./mysqldata:/var/lib/mysql
+    healthcheck:
+      test: ["CMD", "mysqladmin", "ping", "-h", "localhost"]
+      interval: 10s
+      retries: 5

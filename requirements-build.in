@@ -1,0 +1,5 @@
+# Build backend for the single sdist-only dependency (pyaes, required by
+# Telethon). Hash-locked into requirements-build.txt so even the build step
+# uses verified packages (pip does not hash-check isolated build envs).
+setuptools
+wheel
