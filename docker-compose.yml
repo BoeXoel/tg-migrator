@@ -6,8 +6,9 @@
 
 services:
   migrator:
-    build: .
-    image: tg-migrator:latest
+    image: boexoel/tg-migrator:latest
+    # Uncomment 'build: .' below if you want to build locally from source:
+    # build: .
     container_name: tg-migrator
     restart: unless-stopped
     init: true

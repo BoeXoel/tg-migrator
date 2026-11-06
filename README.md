@@ -1,6 +1,6 @@
 # TG Migrator
 
-**English** | [简体中文](docs/README.zh-CN.md)
+**English** | [简体中文](docs/README.zh-CN.md) | [Docker Hub (`boexoel/tg-migrator`)](https://hub.docker.com/r/boexoel/tg-migrator)
 
 > **Self-Hosted Telegram Media Archiver & Multi-Sink Message Router Controlled via Telegram Bot**
 > Synchronize and archive messages from Telegram groups, channels, or Forum Topics that you have legitimate access to into **other Telegram chats**, **local NAS directories**, or **WebDAV storage (Alist / Nextcloud / etc.)** — supporting both one-off historical migrations and 24/7 real-time watch routing.
@@ -25,7 +25,9 @@
 
 ## Quick Start (Docker Deployment)
 
-### Option 1: Build from Source
+### Option 1: Deploy with Pre-Built Docker Hub Image (Recommended)
+
+Pre-built multi-architecture images (`linux/amd64` and `linux/arm64`) are published on Docker Hub at **[`boexoel/tg-migrator`](https://hub.docker.com/r/boexoel/tg-migrator)**. You only need [`docker-compose.yml`](docker-compose.yml) and [`.env.example`](.env.example):
 
 ```bash
 # 1. Copy and edit environment variables (fill in API_ID / API_HASH / BOT_TOKEN / ADMIN_IDS)
@@ -35,26 +37,17 @@ cp .env.example .env
 mkdir -p data sessions downloads archive
 sudo chown -R 1000:1000 data sessions downloads archive
 
-# 3. Build and start in the background
-docker compose up -d --build
+# 3. Pull image and start in the background
+docker compose pull && docker compose up -d
 docker compose logs -f
 ```
 
-### Option 2: Use Pre-Built Multi-Arch Images (Docker Hub / GHCR)
+### Option 2: Build Locally from Source
 
-Pre-built images are published for both `linux/amd64` and `linux/arm64`. On your deployment server, you only need [`docker-compose.yml`](docker-compose.yml) and `.env` — replace `build: .` in `docker-compose.yml` with the image reference:
-
-```yaml
-services:
-  migrator:
-    # Docker Hub (Recommended)
-    image: boexoel/tg-migrator:latest
-    # Or GitHub Container Registry
-    # image: ghcr.io/boexoel/tg-migrator:latest
-```
+If you modified the code and want to build the image locally, uncomment `build: .` in [`docker-compose.yml`](docker-compose.yml) and run:
 
 ```bash
-docker compose pull && docker compose up -d
+docker compose up -d --build
 ```
 
 ---

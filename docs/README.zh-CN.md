@@ -1,6 +1,6 @@
 # TG Migrator
 
-[English](../README.md) | **简体中文**
+[English](../README.md) | **简体中文** | [Docker Hub (`boexoel/tg-migrator`)](https://hub.docker.com/r/boexoel/tg-migrator)
 
 > **通过 Telegram Bot 交互管控的自托管消息归档与多端路由服务**
 > 支持将你拥有合法访问权限的 Telegram 群组、频道或论坛 Topic 消息，同步与结构化归档至 **其他 Telegram 会话**、**本地 NAS 目录** 或 **WebDAV 存储（Alist / Nextcloud 等）**，兼顾一次性历史迁移与 7×24 小时实时监听同步。
@@ -25,7 +25,9 @@
 
 ## 快速开始（Docker 部署）
 
-### 方式一：本地源码构建启动
+### 方式一：使用 Docker Hub 预构建镜像（推荐）
+
+官方多架构预构建镜像（支持 `linux/amd64` 与 `linux/arm64`）已发布于 Docker Hub：**[`boexoel/tg-migrator`](https://hub.docker.com/r/boexoel/tg-migrator)**。在服务器上仅需准备 [`docker-compose.yml`](../docker-compose.yml) 与 [`.env.example`](../.env.example)：
 
 ```bash
 # 1. 复制并编辑环境变量配置（填入 API_ID / API_HASH / BOT_TOKEN / ADMIN_IDS）
@@ -35,26 +37,17 @@ cp .env.example .env
 mkdir -p data sessions downloads archive
 sudo chown -R 1000:1000 data sessions downloads archive
 
-# 3. 构建并后台启动服务
-docker compose up -d --build
+# 3. 拉取镜像并后台启动服务
+docker compose pull && docker compose up -d
 docker compose logs -f
 ```
 
-### 方式二：使用预构建镜像（Docker Hub / GHCR）
+### 方式二：本地源码构建启动
 
-若使用已发布的预构建多架构镜像（支持 `linux/amd64` 与 `linux/arm64`），在服务器上仅需保留 `docker-compose.yml` 与 `.env`，将 [`docker-compose.yml`](../docker-compose.yml) 中的 `build: .` 移除并替换为镜像地址即可免编译部署：
-
-```yaml
-services:
-  migrator:
-    # Docker Hub（推荐）
-    image: boexoel/tg-migrator:latest
-    # 或 GitHub Container Registry
-    # image: ghcr.io/boexoel/tg-migrator:latest
-```
+如果你修改了源码希望在本地编译运行，只需取消 [`docker-compose.yml`](../docker-compose.yml) 中 `# build: .` 的注释并执行：
 
 ```bash
-docker compose pull && docker compose up -d
+docker compose up -d --build
 ```
 
 ---
