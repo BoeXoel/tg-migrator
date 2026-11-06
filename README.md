@@ -1,6 +1,6 @@
 # TG Migrator
 
-**English** | [简体中文](docs/README.zh-CN.md)
+**English** | [简体中文](docs/README.zh-CN.md) | [Docker](https://hub.docker.com/r/boexoel/tg-migrator)
 
 > **Self-Hosted Telegram Media Archiver & Multi-Sink Message Router Controlled via Telegram Bot**
 > Synchronize and archive messages from Telegram groups, channels, or Forum Topics that you have legitimate access to into **other Telegram chats**, **local NAS directories**, or **WebDAV storage (Alist / Nextcloud / etc.)** — supporting both one-off historical migrations and 24/7 real-time watch routing.
@@ -25,7 +25,16 @@
 
 ## Quick Start (Docker Deployment)
 
-### Option 1: Build from Source
+> [!IMPORTANT]
+> **Prerequisites — Required Telegram Credentials (for `.env`)**
+> Before starting the service, prepare the following three credentials:
+> - **`API_ID` & `API_HASH`**: Log in to [my.telegram.org](https://my.telegram.org) and create an application under **API development tools** to obtain them.
+> - **`BOT_TOKEN`**: Message [@BotFather](https://t.me/BotFather) on Telegram and send `/newbot` to create a control Bot and obtain its HTTP API token.
+> - **`ADMIN_IDS`**: Your personal numeric Telegram User ID (comma-separated for multiple admins), obtainable by messaging bots such as [@userinfobot](https://t.me/userinfobot).
+
+### Option 1: Deploy with Pre-Built Docker Hub Image (Recommended)
+
+Pre-built multi-architecture images (`linux/amd64` and `linux/arm64`) are published on Docker Hub at **[`boexoel/tg-migrator`](https://hub.docker.com/r/boexoel/tg-migrator)**. You only need [`docker-compose.yml`](docker-compose.yml) and [`.env.example`](.env.example):
 
 ```bash
 # 1. Copy and edit environment variables (fill in API_ID / API_HASH / BOT_TOKEN / ADMIN_IDS)
@@ -35,26 +44,17 @@ cp .env.example .env
 mkdir -p data sessions downloads archive
 sudo chown -R 1000:1000 data sessions downloads archive
 
-# 3. Build and start in the background
-docker compose up -d --build
+# 3. Pull image and start in the background
+docker compose pull && docker compose up -d
 docker compose logs -f
 ```
 
-### Option 2: Use Pre-Built Multi-Arch Images (Docker Hub / GHCR)
+### Option 2: Build Locally from Source
 
-Pre-built images are published for both `linux/amd64` and `linux/arm64`. On your deployment server, you only need [`docker-compose.yml`](docker-compose.yml) and `.env` — replace `build: .` in `docker-compose.yml` with the image reference:
-
-```yaml
-services:
-  migrator:
-    # Docker Hub (Recommended)
-    image: boexoel/tg-migrator:latest
-    # Or GitHub Container Registry
-    # image: ghcr.io/boexoel/tg-migrator:latest
-```
+If you modified the code and want to build the image locally, uncomment `build: .` in [`docker-compose.yml`](docker-compose.yml) and run:
 
 ```bash
-docker compose pull && docker compose up -d
+docker compose up -d --build
 ```
 
 ---
@@ -114,6 +114,7 @@ Send `/config` to open the interactive button panel (toggle media types, transfe
 
 | Setting Key | Default | Description |
 | --- | --- | --- |
+| `ui.language` | `en` | Bot interface language: `en` (English) or `zh` (Simplified Chinese); defaults to `BOT_LANG` in `.env` |
 | `transfer.hide_sender` | `true` | Hide original sender header during native copy |
 | `transfer.native_copy` / `native_only` | `true` / `false` | Prefer zero-download native copy / require native copy only |
 | `transfer.strip_spoilers` | `true` | Strip media spoiler masks (triggers download & re-upload when present) |
@@ -203,7 +204,7 @@ PROXY_BYPASS_RESOLVE=true
 | **Retry & Cancel** | `/retry [task_id]` `/cancel_task <id>` | Re-queue failed items, cancel an active task |
 | **Targets** | `/targets` `/bind` `/add_tg` `/add_local` `/add_webdav` | List, bind, add, or test storage destinations |
 | **Watch Routes** | `/routes` `/add_route` `/route_set` `/route_unset` | Manage continuous routes, historical scans, and per-route overrides |
-| **Configuration** | `/config` `/get [prefix]` `/set <key> <value>` | Interactive settings UI, query or live-update runtime parameters |
+| **Configuration** | `/config` `/lang` `/get [prefix]` `/set <key> <value>` | Interactive settings UI, switch language (`en`/`zh`), query or live-update runtime parameters |
 | **Content Filters** | `/filters` `/filter_add` `/filter_del` `/filter_toggle` | Manage keyword/regex allowlists/blocklists and media filters |
 | **Backup & Restore** | `/export [secrets]` `/import [replace]` | Export or import YAML configuration backups |
 | **Verify & Reports** | `/verify <task_id>` `/report [task_id]` | Sample-verify delivered messages, export CSV report of skipped oversized files |

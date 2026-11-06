@@ -76,4 +76,19 @@ def test_defaults_match_requirements():
     settings = RuntimeSettings()
     assert settings.archive.sidecar_format == "json"
     assert settings.archive.group_by_month is False
+    assert settings.ui.language == "en"
     assert "archive.folder_naming" in leaf_paths()
+    assert "ui.language" in leaf_paths()
+
+
+def test_language_settings_and_env(tmp_path, monkeypatch):
+    monkeypatch.chdir(tmp_path)
+    assert load_bootstrap(BASE_ENV).bot_lang == "en"
+    assert load_bootstrap({**BASE_ENV, "BOT_LANG": "zh-CN"}).bot_lang == "zh"
+    settings = RuntimeSettings()
+    updated = set_setting(settings, "ui.language", "zh-CN")
+    assert updated.ui.language == "zh"
+    updated = set_setting(updated, "ui.language", "English")
+    assert updated.ui.language == "en"
+    with pytest.raises(ValueError):
+        set_setting(settings, "ui.language", "fr")

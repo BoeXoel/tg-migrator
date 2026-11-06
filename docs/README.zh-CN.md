@@ -1,6 +1,6 @@
 # TG Migrator
 
-[English](../README.md) | **简体中文**
+[English](../README.md) | **简体中文** | [Docker](https://hub.docker.com/r/boexoel/tg-migrator)
 
 > **通过 Telegram Bot 交互管控的自托管消息归档与多端路由服务**
 > 支持将你拥有合法访问权限的 Telegram 群组、频道或论坛 Topic 消息，同步与结构化归档至 **其他 Telegram 会话**、**本地 NAS 目录** 或 **WebDAV 存储（Alist / Nextcloud 等）**，兼顾一次性历史迁移与 7×24 小时实时监听同步。
@@ -25,7 +25,16 @@
 
 ## 快速开始（Docker 部署）
 
-### 方式一：本地源码构建启动
+> [!IMPORTANT]
+> **前置准备：所需 Telegram 凭据（用于填写 `.env`）**
+> 在启动服务前，请提前准备好以下三项凭据信息：
+> - **`API_ID` 与 `API_HASH`**：使用手机号登录 [my.telegram.org](https://my.telegram.org)，进入 **API development tools** 创建一个应用即可获取。
+> - **`BOT_TOKEN`**：在 Telegram 中私聊官方 [@BotFather](https://t.me/BotFather)，发送 `/newbot` 创建一个用于控制服务的 Bot 并获取其 Token。
+> - **`ADMIN_IDS`**：你个人的 Telegram 纯数字用户 ID（支持多个，用英文逗号分隔），可通过私聊 [@userinfobot](https://t.me/userinfobot) 等机器人查询获取。
+
+### 方式一：使用 Docker Hub 预构建镜像（推荐）
+
+官方多架构预构建镜像（支持 `linux/amd64` 与 `linux/arm64`）已发布于 Docker Hub：**[`boexoel/tg-migrator`](https://hub.docker.com/r/boexoel/tg-migrator)**。在服务器上仅需准备 [`docker-compose.yml`](../docker-compose.yml) 与 [`.env.example`](../.env.example)：
 
 ```bash
 # 1. 复制并编辑环境变量配置（填入 API_ID / API_HASH / BOT_TOKEN / ADMIN_IDS）
@@ -35,26 +44,17 @@ cp .env.example .env
 mkdir -p data sessions downloads archive
 sudo chown -R 1000:1000 data sessions downloads archive
 
-# 3. 构建并后台启动服务
-docker compose up -d --build
+# 3. 拉取镜像并后台启动服务
+docker compose pull && docker compose up -d
 docker compose logs -f
 ```
 
-### 方式二：使用预构建镜像（Docker Hub / GHCR）
+### 方式二：本地源码构建启动
 
-若使用已发布的预构建多架构镜像（支持 `linux/amd64` 与 `linux/arm64`），在服务器上仅需保留 `docker-compose.yml` 与 `.env`，将 [`docker-compose.yml`](../docker-compose.yml) 中的 `build: .` 移除并替换为镜像地址即可免编译部署：
-
-```yaml
-services:
-  migrator:
-    # Docker Hub（推荐）
-    image: boexoel/tg-migrator:latest
-    # 或 GitHub Container Registry
-    # image: ghcr.io/boexoel/tg-migrator:latest
-```
+如果你修改了源码希望在本地编译运行，只需取消 [`docker-compose.yml`](../docker-compose.yml) 中 `# build: .` 的注释并执行：
 
 ```bash
-docker compose pull && docker compose up -d
+docker compose up -d --build
 ```
 
 ---
@@ -114,6 +114,7 @@ docker compose pull && docker compose up -d
 
 | 配置项 | 默认值 | 说明 |
 | --- | --- | --- |
+| `ui.language` | `en` | Bot 界面语言：`en`（英文）或 `zh`（简体中文），初始默认值取自 `.env` 中的 `BOT_LANG` |
 | `transfer.hide_sender` | `true` | 原生复制消息时隐藏原发送者引用头 |
 | `transfer.native_copy` / `native_only` | `true` / `false` | 优先使用免下载原生复制 / 仅允许原生复制（需读取账号同样具备目标群写入权限） |
 | `transfer.strip_spoilers` | `true` | 自动去除媒体剧透遮罩（开启后含遮罩媒体将通过下载重传去除标记） |
@@ -203,7 +204,7 @@ PROXY_BYPASS_RESOLVE=true
 | **重试与取消** | `/retry [任务ID]` `/cancel_task <ID>` | 重新排队失败的消息项、取消指定运行中任务 |
 | **目的地管理** | `/targets` `/bind` `/add_tg` `/add_local` `/add_webdav` | 查看、绑定、新增或测试各类存储目的地 |
 | **路由与监听** | `/routes` `/add_route` `/route_set` `/route_unset` | 管理长期同步路由、历史扫描与路由级参数覆盖 |
-| **系统配置** | `/config` `/get [前缀]` `/set <键> <值>` | 可视化配置面板、查询或在线修改运行时参数 |
+| **系统配置** | `/config` `/lang` `/get [前缀]` `/set <键> <值>` | 可视化配置面板、一键切换中英语言、查询或在线修改运行时参数 |
 | **内容过滤** | `/filters` `/filter_add` `/filter_del` `/filter_toggle` | 管理关键词/正则表达式黑白名单与媒体类型过滤 |
 | **备份与维护** | `/export [secrets]` `/import [replace]` | 导出或导入 YAML 配置文件 |
 | **校验与报表** | `/verify <任务ID>` `/report [任务ID]` | 抽样校验目标端已投递消息完整性、导出超大未传文件 CSV 报表 |

@@ -153,10 +153,13 @@ class Watcher:
                     await self.catch_up(route)
                 except Exception as exc:
                     log.exception("Route %s catch-up failed", route.name)
-                    await self.notifier.notify(
-                        f"⚠️ 监听路由 {route.name} 补齐失败：{exc.__class__.__name__}: {exc}",
-                        key=f"catchup:{route.id}",
+                    lang = getattr(self.store.current.ui, "language", "en") or "en"
+                    msg = (
+                        f"⚠️ 监听路由 {route.name} 补齐失败：{exc.__class__.__name__}: {exc}"
+                        if lang == "zh"
+                        else f"⚠️ Watch route {route.name} catch-up failed: {exc.__class__.__name__}: {exc}"
                     )
+                    await self.notifier.notify(msg, key=f"catchup:{route.id}")
 
     async def _poll_loop(self) -> None:
         while True:

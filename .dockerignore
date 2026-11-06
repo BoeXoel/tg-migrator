@@ -4,6 +4,7 @@
 .dockerignore
 docs
 README.md
+CHANGELOG.md
 LICENSE
 legacy_archive
 data

@@ -84,3 +84,10 @@ class AppContext:
 
     def is_admin(self, user_id: int | None) -> bool:
         return user_id is not None and int(user_id) in self.boot.admin_ids
+
+    @property
+    def lang(self) -> str:
+        return getattr(self.store.current.ui, "language", "en") or "en"
+
+    def t(self, en: str, zh: str) -> str:
+        return zh if self.lang == "zh" else en
