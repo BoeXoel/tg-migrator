@@ -19,26 +19,39 @@ log = logging.getLogger("migrator.limiter")
 class TelegramLimiter:
     def __init__(self, store: SettingsStore) -> None:
         self.store = store
-        self._lock = asyncio.Lock()
-        self._last_global = 0.0
+        self._locks: dict[str, asyncio.Lock] = {}
         self._last_by_operation: dict[str, float] = {}
+
+    def _lock_for(self, operation: str) -> asyncio.Lock:
+        lock = self._locks.get(operation)
+        if lock is None:
+            lock = asyncio.Lock()
+            self._locks[operation] = lock
+        return lock
 
     async def wait(self, operation: str) -> None:
         limits = self.store.current.limits
-        async with self._lock:
+        async with self._lock_for(operation):
             now = time.monotonic()
-            global_wait = limits.global_min_delay_seconds - (now - self._last_global)
-            op_wait = limits.delay_for(operation) - (now - self._last_by_operation.get(operation, 0.0))
-            delay = max(0.0, global_wait, op_wait)
+            min_interval = max(limits.global_min_delay_seconds, limits.delay_for(operation))
+            op_wait = min_interval - (now - self._last_by_operation.get(operation, 0.0))
+            delay = max(0.0, op_wait)
             if delay > 0:
                 await asyncio.sleep(delay)
             finished = time.monotonic()
-            self._last_global = finished
             self._last_by_operation[operation] = finished
 
-    async def call(self, operation: str, fn: Callable[..., Awaitable[Any]], *args: Any, **kwargs: Any) -> Any:
+    async def call(
+        self,
+        operation: str,
+        fn: Callable[..., Awaitable[Any]],
+        *args: Any,
+        _pace: bool = True,
+        **kwargs: Any,
+    ) -> Any:
         while True:
-            await self.wait(operation)
+            if _pace:
+                await self.wait(operation)
             try:
                 return await fn(*args, **kwargs)
             except (errors.FloodWaitError, errors.SlowModeWaitError) as exc:

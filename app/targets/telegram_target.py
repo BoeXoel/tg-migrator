@@ -434,11 +434,12 @@ class TelegramTarget:
     ) -> list[int]:
         transfer = ctx.settings.transfer
         input_peer = await writer.get_input_entity(dest)
+        await self.limiter.wait("upload")
         multi_media = []
         overflow_texts: list[tuple[str, list[Any] | None]] = []
         for message, path, thumb in items:
             kind = mh.media_kind(message)
-            uploaded = await self.limiter.call("upload", writer.upload_file, str(path))
+            uploaded = await self.limiter.call("upload", writer.upload_file, str(path), _pace=False)
             if kind == "photo":
                 media: Any = types.InputMediaUploadedPhoto(file=uploaded)
             else:
@@ -453,7 +454,7 @@ class TelegramTarget:
                     force_file=True if kind == "document" else None,
                 )
             stored = await self.limiter.call(
-                "upload", writer, functions.messages.UploadMediaRequest(peer=input_peer, media=media)
+                "upload", writer, functions.messages.UploadMediaRequest(peer=input_peer, media=media), _pace=False
             )
             caption, entities = self._caption(message, transfer, strip)
             if caption and utf16_len(caption) > caps.caption_limit:
@@ -477,7 +478,7 @@ class TelegramTarget:
             multi_media=multi_media,
             reply_to=reply_to_topic(topic),
         )
-        result = await self.limiter.call("upload", writer, request)
+        result = await self.limiter.call("upload", writer, request, _pace=False)
         messages = sent_messages(result)
         if not messages:
             raise RetryableJobError("Telegram returned no album messages", reason_code="telegram_empty_result")

@@ -378,14 +378,28 @@ class Repository:
     async def fetch_due_jobs(self, limit: int, *, reason_code: str | None = None) -> list[Job]:
         now = utcnow()
         async with self._sm() as session:
-            stmt = (
-                select(Job)
-                .where(Job.status == "pending", or_(Job.next_retry_at.is_(None), Job.next_retry_at <= now))
-                .order_by(Job.id)
-                .limit(limit)
+            rn = (
+                func.row_number()
+                .over(
+                    partition_by=(Job.task_id, Job.route_id, Job.target_id),
+                    order_by=Job.id,
+                )
+                .label("rn")
+            )
+            is_task = case((Job.task_id.is_(None), 0), else_=1).label("is_task")
+            subq = select(Job.id.label("job_id"), rn, is_task).where(
+                Job.status == "pending",
+                or_(Job.next_retry_at.is_(None), Job.next_retry_at <= now),
             )
             if reason_code is not None:
-                stmt = stmt.where(Job.reason_code == reason_code)
+                subq = subq.where(Job.reason_code == reason_code)
+            sub = subq.subquery()
+            stmt = (
+                select(Job)
+                .join(sub, Job.id == sub.c.job_id)
+                .order_by(sub.c.rn, sub.c.is_task, Job.id)
+                .limit(limit)
+            )
             return list((await session.execute(stmt)).scalars().all())
 
     async def next_retry_time(self):

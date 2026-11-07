@@ -270,3 +270,38 @@ def test_misplaced_topic_is_deleted(tmp_path):
     with pytest.raises(TopicDeliveryError):
         asyncio.run(handler.deliver(context(make_job(media_type="text"), target, config, [message(10, text="x")], settings)))
     assert clients.writer.deleted
+
+
+def test_limiter_operations_do_not_block_each_other():
+    import time
+
+    settings = fast_settings(
+        **{
+            "limits__upload_delay_seconds": 0.25,
+            "limits__read_delay_seconds": 0.0,
+            "limits__download_delay_seconds": 0.0,
+        }
+    )
+    limiter = limiter_for(settings)
+
+    async def scenario():
+        # Prime upload so the next upload must sleep 0.25s
+        await limiter.wait("upload")
+        t0 = time.monotonic()
+
+        async def slow_upload():
+            await limiter.wait("upload")
+            return time.monotonic() - t0
+
+        async def fast_read_and_download():
+            await asyncio.sleep(0.01)
+            await limiter.wait("read")
+            await limiter.wait("download")
+            return time.monotonic() - t0
+
+        up_elapsed, rd_elapsed = await asyncio.gather(slow_upload(), fast_read_and_download())
+        return up_elapsed, rd_elapsed
+
+    up_elapsed, rd_elapsed = asyncio.run(scenario())
+    assert rd_elapsed < 0.12
+    assert up_elapsed >= 0.20

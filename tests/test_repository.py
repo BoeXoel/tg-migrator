@@ -152,3 +152,34 @@ def test_delete_target_detaches_routes(tmp_path):
 
     target_ids, fallback, counts = run(scenario())
     assert target_ids == [2] and fallback is None and counts == {}
+
+
+def test_fetch_due_jobs_round_robin_across_tasks_and_live_watch(tmp_path):
+    async def scenario():
+        repo = await make_repo(tmp_path)
+        try:
+            target = await repo.add_target(name="t", type="local", config={})
+            route = await repo.add_route(name="r", source_chat_id="-1001", target_ids=[target.id])
+            task_big = await repo.create_task(kind="adhoc", source_chat_id="-1001", target_ids=[target.id], status="queued")
+            task_small = await repo.create_task(kind="adhoc", source_chat_id="-1002", target_ids=[target.id], status="queued")
+            # Enqueue 3 jobs for big task first, then 2 for small task, then 1 live-watch job (task_id=None)
+            await repo.enqueue_jobs(
+                [
+                    job_row(target.id, "big1", task_id=task_big.id, source_message_id=1),
+                    job_row(target.id, "big2", task_id=task_big.id, source_message_id=2),
+                    job_row(target.id, "big3", task_id=task_big.id, source_message_id=3),
+                    job_row(target.id, "small1", task_id=task_small.id, source_message_id=10),
+                    job_row(target.id, "small2", task_id=task_small.id, source_message_id=11),
+                    job_row(target.id, "watch1", task_id=None, route_id=route.id, source_message_id=99),
+                ]
+            )
+            due = await repo.fetch_due_jobs(10)
+            return [j.dedupe_key for j in due]
+        finally:
+            await repo.engine.dispose()
+
+    keys = run(scenario())
+    # Round 1: live watch first, then 1st of big task, then 1st of small task
+    # Round 2: 2nd of big task, 2nd of small task
+    # Round 3: 3rd of big task
+    assert keys == ["watch1", "big1", "small1", "big2", "small2", "big3"]
