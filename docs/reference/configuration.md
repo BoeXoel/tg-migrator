@@ -105,10 +105,10 @@ All runtime settings are stored in the database and take effect immediately with
 | Key | Default | Description |
 | :--- | :--- | :--- |
 | `limits.download_delay_seconds` | `5.0` | Minimum delay between media downloads |
-| `limits.upload_delay_seconds` | `30.0` | Minimum delay between media uploads |
+| `limits.upload_delay_seconds` | `10.0` | Minimum delay between media uploads |
 | `limits.copy_delay_seconds` | `10.0` | Minimum delay between native server-side copies |
-| `worker.batch_size` | `25` | Number of jobs processed before taking a batch cooldown pause |
-| `worker.pause_between_batches_seconds` | `600` | Cooldown pause (in seconds) between batches to protect accounts from FloodWait |
-| `worker.concurrency` | `1` | Number of concurrent worker tasks (`1`–`8`) |
+| `worker.batch_size` | `50` | Number of Telegram deliveries processed before taking a batch cooldown pause |
+| `worker.pause_between_batches_seconds` | `120` | Cooldown pause (in seconds) between batches to protect accounts from FloodWait |
+| `worker.concurrency` | `3` | Number of concurrent worker tasks (`1`–`8`) |
 | `watch.poll_interval_seconds` | `300` | Interval (in seconds) between watermark catch-up polls on Watch Routes |
 | `downloads.min_free_bytes` | `5368709120` | Minimum free disk space (`5 GiB`) required before starting a new download |

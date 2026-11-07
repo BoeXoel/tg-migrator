@@ -105,10 +105,10 @@
 | 参数键名 | 默认值 | 说明 |
 | :--- | :--- | :--- |
 | `limits.download_delay_seconds` | `5.0` | 两次媒体下载之间的最小间隔秒数 |
-| `limits.upload_delay_seconds` | `30.0` | 两次媒体上传之间的最小间隔秒数 |
+| `limits.upload_delay_seconds` | `10.0` | 两次媒体上传之间的最小间隔秒数 |
 | `limits.copy_delay_seconds` | `10.0` | 两次原生转发之间的最小间隔秒数 |
-| `worker.batch_size` | `25` | 每连续处理多少个任务后进行一次批次冷却休息 |
-| `worker.pause_between_batches_seconds` | `600` | 批次之间的冷却休息秒数（默认休息 10 分钟，保护账号免遭 FloodWait 限制） |
-| `worker.concurrency` | `1` | 并发 Worker 数量（`1` ~ `8`） |
+| `worker.batch_size` | `50` | 每累计完成多少次 Telegram 投递后进行一次批次冷却休息 |
+| `worker.pause_between_batches_seconds` | `120` | 批次之间的冷却休息秒数（默认休息 2 分钟，保护账号免遭 FloodWait 限制） |
+| `worker.concurrency` | `3` | 并发 Worker 数量（`1` ~ `8`，支持多任务交错并行） |
 | `watch.poll_interval_seconds` | `300` | 监听路由的水位线兜底轮询间隔（秒） |
 | `downloads.min_free_bytes` | `5368709120` | 启动新下载前要求下载目录至少保留的可用磁盘空间（默认 `5 GiB`） |

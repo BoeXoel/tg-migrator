@@ -353,7 +353,7 @@ class LimitSettings:
     read_delay_seconds: float = 2.0
     download_delay_seconds: float = 5.0
     copy_delay_seconds: float = 10.0
-    upload_delay_seconds: float = 30.0
+    upload_delay_seconds: float = 10.0
     verify_delay_seconds: float = 2.0
     floodwait_extra_min_seconds: int = 5
     floodwait_extra_max_seconds: int = 20
@@ -373,10 +373,10 @@ class LimitSettings:
 
 @dataclass
 class WorkerSettings:
-    batch_size: int = 25
-    pause_between_batches_seconds: int = 600
+    batch_size: int = 50
+    pause_between_batches_seconds: int = 120
     idle_sleep_seconds: int = 30
-    concurrency: int = 1
+    concurrency: int = 3
 
 
 @dataclass

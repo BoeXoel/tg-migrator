@@ -149,26 +149,37 @@ class Worker:
             self.batch_pause_until = None
 
             batch_size = settings.worker.batch_size
-            jobs = await self.repo.fetch_due_jobs(max(1, batch_size - self.processed_since_pause))
-            if not jobs:
+            due = await self.repo.fetch_due_jobs(max(batch_size, settings.worker.concurrency * 4, 20))
+            if not due:
                 await self._sleep(await self._idle_timeout(settings.worker.idle_sleep_seconds))
                 continue
 
+            # Pick at most 1 job per (task_id, route_id, target_id) stream per wave:
+            # different tasks/routes/targets execute concurrently, while jobs inside
+            # the same stream execute strictly in chronological order.
+            seen_streams: set[tuple[Any, Any, int]] = set()
+            jobs: list[Job] = []
+            for job in due:
+                stream_key = (job.task_id, job.route_id, job.target_id)
+                if stream_key not in seen_streams:
+                    seen_streams.add(stream_key)
+                    jobs.append(job)
+
             semaphore = asyncio.Semaphore(max(1, settings.worker.concurrency))
 
-            async def run_one(job: Job) -> None:
+            async def run_one(job: Job) -> bool:
                 async with semaphore:
                     if self.paused or self._stopping:
-                        return
-                    await self.process(job)
+                        return False
+                    return await self.process(job)
 
-            await asyncio.gather(*(run_one(job) for job in jobs))
-            self.processed_since_pause += len(jobs)
+            results = await asyncio.gather(*(run_one(job) for job in jobs))
+            self.processed_since_pause += sum(1 for item in results if item)
             if self.processed_since_pause >= batch_size:
                 self.processed_since_pause = 0
                 pause = settings.worker.pause_between_batches_seconds
                 if pause > 0:
-                    log.info("Batch of %s finished; pausing %ss (worker.pause_between_batches_seconds)", batch_size, pause)
+                    log.info("Batch of %s Telegram deliveries finished; pausing %ss (worker.pause_between_batches_seconds)", batch_size, pause)
                     self.batch_pause_until = utcnow() + timedelta(seconds=pause)
 
     async def _idle_timeout(self, default: int) -> float:
@@ -179,13 +190,14 @@ class Worker:
 
     # -------------------------------------------------------------- one job
 
-    async def process(self, job: Job) -> None:
+    async def process(self, job: Job) -> bool:
         attempts = await self.repo.claim_job(job.id)
         if attempts is None:
-            return
+            return False
         target = await self.repo.get_target(job.target_id)
         active = ActiveJob(job.id, target.name if target else "?", f"{job.source_title or job.source_chat_id}#{job.source_message_id}", "downloading")
         self.active[job.id] = active
+        tg_delivered = False
 
         async def on_phase(phase: str) -> None:
             active.phase = phase
@@ -194,10 +206,10 @@ class Worker:
         try:
             if target is None:
                 await self.repo.mark_skipped(job.id, "Target was deleted", reason_code="target_missing")
-                return
+                return False
             if not target.enabled:
                 await self.repo.defer_job(job.id, "Target is disabled", reason_code="target_disabled", retry_after_seconds=3600)
-                return
+                return False
             result = await self._deliver(job, target, on_phase)
             if result.status == "done":
                 await self.repo.mark_done(
@@ -210,6 +222,7 @@ class Worker:
                     reason_code=result.reason_code,
                 )
                 log.info("Job %s -> %s done (%s)", job.id, target.name, result.transfer_route)
+                tg_delivered = target.type == "telegram" and not str(result.transfer_route or "").startswith("fallback:")
             else:
                 await self.repo.mark_skipped(
                     job.id, result.reason, reason_code=result.reason_code, transfer_route=result.transfer_route
@@ -219,8 +232,10 @@ class Worker:
                         job.id, writer_identity=result.writer_identity, upload_limit_bytes=result.upload_limit_bytes
                     )
                 log.info("Job %s skipped: %s", job.id, result.reason)
+            return tg_delivered
         except Exception as exc:  # noqa: BLE001 - classified below
             await self._handle_error(job, attempts, exc)
+            return False
         finally:
             self.active.pop(job.id, None)
             if job.task_id:
