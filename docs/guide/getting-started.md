@@ -95,7 +95,7 @@ Open a private chat with the Bot in Telegram and complete the following 4 steps:
 3. **Bind a Destination (`/bind`)**
    Add the Bot to the destination Telegram group or channel (with permission to post messages), then send `/bind` inside that group (or inside a specific **Forum Sub-Topic**).
 4. **Launch a Migration Task**
-   Forward a message from a source chat to the Bot, or send a Telegram message link such as `https://t.me/c/123456789/42`. Select one or more destinations on the prompt card and tap **`🚀 Start`**.
+   Forward a message from a source chat to the Bot, or send a Telegram message link such as `https://t.me/c/123456789/42`, then reply with the target ID (e.g. `1`) to start transferring.
 
 ---
 

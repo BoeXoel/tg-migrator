@@ -1,4 +1,4 @@
-"""Status panel, link-driven tasks, queue control, and language switcher."""
+"""Start/Help panels, status panel, link-driven tasks, queue control, and language switcher."""
 
 from __future__ import annotations
 
@@ -10,7 +10,20 @@ from telethon import Button, TelegramClient, events
 
 from app.bot.auth import admin_only
 from app.bot.context import AppContext, PendingSelection
-from app.bot.ui import back_button, chunk_buttons, command, command_args, esc, status_labels, target_label, tr
+from app.bot.ui import (
+    PAGE_SIZE,
+    back_button,
+    command,
+    command_args,
+    esc,
+    paginate_items,
+    pagination_row,
+    status_labels,
+    sync_bot_commands,
+    target_id_list,
+    target_label,
+    tr,
+)
 from app.config import normalize_lang
 from app.db.models import TERMINAL_STATUSES
 from app.engine.report import oversized_csv
@@ -19,7 +32,7 @@ from app.telegram.link_parser import ParsedLink
 
 log = logging.getLogger("migrator.bot.task")
 
-HELP_TEXT_EN = """<b>🤖 TG Migrator Control Panel</b>
+HELP_TEXT_EN = """<b>📖 TG Migrator Command Reference</b>
 
 <b>Quick Transfer</b>
 Send any Telegram message link directly:
@@ -28,13 +41,15 @@ Send any Telegram message link directly:
 • Forum Topic links (<code>/c/chat/topic/msg</code>) are detected automatically
 
 <b>Targets (Destinations)</b>
-/targets Manage · /bind Bind Telegram group/channel/topic
+/targets <code>[id]</code> List targets (paginated) or manage target <code>#id</code> (alias: /target)
+/bind Bind Telegram group, channel, or Forum Sub-Topic
 /add_local Local directory · /add_webdav WebDAV server
 /add_tg <code>chat [topic]</code> Add Telegram target manually
 
 <b>Watch Routes</b>
-/routes Manage · /add_route Create route
-/route_set <code>id key value</code> Per-route setting override
+/routes <code>[id]</code> List routes (paginated) or manage route <code>#id</code> (alias: /route)
+/add_route Create route
+/route_set <code>id key value</code> · /route_unset <code>id key</code> Per-route setting override
 
 <b>Settings & Filters</b>
 /config Panel · /get <code>[section]</code> · /set <code>key value</code>
@@ -43,43 +58,45 @@ Send any Telegram message link directly:
 /export <code>[secrets]</code> Export YAML · /import <code>[replace]</code> Import YAML
 
 <b>Queue & Maintenance</b>
-/status Status · /tasks Tasks · /retry <code>[task_id]</code>
-/pause · /resume · /recover · /cancel_task <code>id</code>
+/status Status · /tasks <code>[id]</code> List tasks or inspect task <code>#id</code> (alias: /task)
+/retry <code>[task_id]</code> · /pause · /resume · /recover · /cancel_task <code>id</code>
 /verify Verify delivered messages · /report Oversized CSV report
 
 <b>Account</b>
-/login Log in reader account · /logout Log out · /cancel Abort wizard"""
+/login Log in reader account · /logout Log out · /cancel Abort operation"""
 
-HELP_TEXT_ZH = """<b>🤖 TG Migrator 控制台</b>
+HELP_TEXT_ZH = """<b>📖 TG Migrator 命令速查字典</b>
 
 <b>快速搬运</b>
-直接发送消息链接即可：
+直接发送消息链接即可创建任务：
 • 单条：<code>https://t.me/c/123456/789</code>
-• 范围：<code>https://t.me/c/123456/100-500</code> 或两条链接
-• Topic 链接（<code>/c/群/Topic/消息</code>）会自动识别
+• 范围：<code>https://t.me/c/123456/100-500</code> 或首尾两条链接
+• 子话题链接（<code>/c/群/Topic/消息</code>）会自动识别
 
-<b>目的地</b>
-/targets 管理 · /bind 绑定 Telegram 群/频道/Topic
-/add_local 本地目录 · /add_webdav WebDAV
+<b>目的地管理</b>
+/targets <code>[id]</code> 分页查看目的地列表，或管理指定 <code>#id</code>（别名：/target）
+/bind 在目标 Telegram 群/频道/子 Topic 内绑定目的地
+/add_local 新建本地目录 · /add_webdav 新建 WebDAV
 /add_tg <code>chat [topic]</code> 手动添加 Telegram 目的地
 
-<b>长期搬运 / 监听</b>
-/routes 管理 · /add_route 新建路由
-/route_set <code>id 设置项 值</code> 路由级覆盖
+<b>持续监听路由</b>
+/routes <code>[id]</code> 分页查看路由列表，或管理指定 <code>#id</code>（别名：/route）
+/add_route 新建监听路由
+/route_set <code>id 设置项 值</code> · /route_unset <code>id 设置项</code> 路由级参数覆盖
 
-<b>设置</b>
-/config 面板 · /get <code>[分区]</code> · /set <code>设置项 值</code>
+<b>参数设置与过滤</b>
+/config 设置面板 · /get <code>[分区]</code> · /set <code>设置项 值</code>
 /lang 切换语言（English / 简体中文）
 /filters 过滤规则 · /filter_add <code>keyword|regex 内容</code> · /filter_del <code>id</code>
-/export <code>[secrets]</code> 导出 YAML · /import <code>[replace]</code> 导入
+/export <code>[secrets]</code> 导出 YAML · /import <code>[replace]</code> 导入 YAML
 
-<b>队列</b>
-/status 状态 · /tasks 任务 · /retry <code>[任务id]</code>
-/pause · /resume · /recover · /cancel_task <code>id</code>
+<b>队列与维护</b>
+/status 运行状态 · /tasks <code>[id]</code> 任务列表或管理指定 <code>#id</code>（别名：/task）
+/retry <code>[任务id]</code> · /pause · /resume · /recover · /cancel_task <code>id</code>
 /verify 校验已发送消息 · /report 导出超限文件 CSV
 
-<b>账号</b>
-/login 登录读取账号 · /logout 退出 · /cancel 取消当前操作"""
+<b>读取账号</b>
+/login 登录读取账号 · /logout 退出登录 · /cancel 取消当前操作"""
 
 HELP_TEXT = HELP_TEXT_EN
 
@@ -100,9 +117,71 @@ def main_menu(lang: str = "en") -> list[list[Any]]:
         ],
         [
             Button.inline(tr(lang, "⚙️ Settings", "⚙️ 设置"), b"cfg:main"),
+            Button.inline(tr(lang, "📖 Help", "📖 帮助"), b"m:help"),
+        ],
+        [
             Button.inline(tr(lang, "🌐 简体中文", "🌐 English"), b"m:lang"),
         ],
     ]
+
+
+async def start_view(ctx: AppContext) -> tuple[str, list[list[Any]]]:
+    """Concise onboarding & readiness overview card for ``/start``."""
+
+    lang = ctx.lang
+    clients = getattr(ctx, "clients", None)
+    if clients is not None and getattr(clients, "reader_me", None) is not None:
+        me = clients.reader_me
+        reader_line = f"✅ {esc(getattr(me, 'first_name', '') or me.id)} (<code>{me.id}</code>)"
+    else:
+        reader_line = tr(lang, "❌ Not logged in (send /login)", "❌ 未登录（请发送 /login）")
+
+    targets = await ctx.repo.list_targets()
+    enabled_targets = sum(1 for t in targets if t.enabled)
+    routes = await ctx.repo.list_routes()
+    watched_routes = sum(1 for r in routes if r.enabled and r.watch_enabled)
+    counts = await ctx.repo.counts_by_status()
+    pending_jobs = counts.get("pending", 0) + counts.get("downloading", 0) + counts.get("uploading", 0)
+
+    worker = getattr(ctx, "worker", None)
+    if worker is not None and getattr(worker, "paused", False):
+        worker_badge = tr(lang, "⏸ Paused", "⏸ 已暂停")
+    else:
+        worker_badge = tr(lang, "▶️ Running", "▶️ 运行中")
+
+    if lang == "zh":
+        lines = [
+            "<b>🤖 TG Migrator 控制台</b>",
+            "",
+            f"• <b>读取账号</b>：{reader_line}",
+            f"• <b>目的地</b>：{enabled_targets} 个可用（共 {len(targets)} 个） · /targets",
+            f"• <b>监听路由</b>：{watched_routes} 条监听中（共 {len(routes)} 条） · /routes",
+            f"• <b>工作队列</b>：{worker_badge} · 待处理/进行中 {pending_jobs} 项 · /status",
+            "",
+            "<b>🚀 初次配置与使用</b>",
+            "1. 发送 /login 登录个人读取账号",
+            "2. 在目标群组或子话题内发送 /bind 绑定目的地（或 /add_local、/add_webdav）",
+            "3. 直接在此发送消息链接并回复目的地编号即可启动搬运",
+            "",
+            "💡 <i>发送 /help 查看完整命令字典。</i>",
+        ]
+    else:
+        lines = [
+            "<b>🤖 TG Migrator Control Panel</b>",
+            "",
+            f"• <b>Reader Account</b>: {reader_line}",
+            f"• <b>Targets</b>: {enabled_targets} enabled ({len(targets)} total) · /targets",
+            f"• <b>Watch Routes</b>: {watched_routes} active ({len(routes)} total) · /routes",
+            f"• <b>Queue</b>: {worker_badge} · {pending_jobs} open job(s) · /status",
+            "",
+            "<b>🚀 Quick Setup & Usage</b>",
+            "1. Send /login to authenticate your personal Reader account",
+            "2. Send /bind inside a target group/topic (or /add_local, /add_webdav)",
+            "3. Send any Telegram message link here and reply with target ID(s) to transfer",
+            "",
+            "💡 <i>Send /help for the full command reference.</i>",
+        ]
+    return "\n".join(lines), main_menu(lang)
 
 
 async def status_view(ctx: AppContext) -> tuple[str, list[list[Any]]]:
@@ -164,38 +243,98 @@ async def status_view(ctx: AppContext) -> tuple[str, list[list[Any]]]:
     return "\n".join(lines), buttons
 
 
-async def tasks_view(ctx: AppContext) -> tuple[str, list[list[Any]]]:
+async def tasks_view(ctx: AppContext, page: int = 0) -> tuple[str, list[list[Any]]]:
     lang = ctx.lang
-    tasks = await ctx.repo.list_tasks(10)
+    tasks = await ctx.repo.list_tasks(100)
     if not tasks:
         return (
             tr(lang, "No tasks yet. Send a Telegram message link to create one.", "暂无任务。发送一条消息链接即可创建。"),
             [[Button.inline(tr(lang, "📊 Status", "📊 状态"), b"m:status"), back_button(b"m:home", lang=lang)]],
         )
-    lines = [tr(lang, "<b>📋 Recent Tasks</b>", "<b>📋 最近任务</b>")]
-    buttons = []
-    for task in tasks:
+    page_items, page, total_pages = paginate_items(tasks, page, PAGE_SIZE)
+    page_suffix = f" ({page + 1}/{total_pages})" if total_pages > 1 else ""
+    lines = [tr(lang, f"<b>📋 Recent Tasks{page_suffix}</b>", f"<b>📋 最近任务{page_suffix}</b>")]
+    for task in page_items:
         counts = await ctx.repo.task_job_counts(task.id)
         open_jobs = sum(v for k, v in counts.items() if k not in TERMINAL_STATUSES)
         span = f"{task.start_id}-{task.end_id}" if task.end_id and task.end_id != task.start_id else f"{task.start_id}"
         lines.append(
-            f"#{task.id} [{task.status}] {esc(task.source_title or task.source_chat_id)} · {span}\n"
+            f"• <code>#{task.id}</code> [{task.status}] {esc(task.source_title or task.source_chat_id)} · {span}\n"
             f"    ✅{counts.get('done', 0)} ⏭{counts.get('skipped', 0)} ❌{counts.get('failed', 0)} ⏳{open_jobs}"
         )
-        if task.status in {"scanning", "queued"}:
-            buttons.append(Button.inline(tr(lang, f"✖️ Cancel #{task.id}", f"✖️ 取消 #{task.id}"), f"tk:x:{task.id}".encode()))
-        if counts.get("failed"):
-            buttons.append(Button.inline(tr(lang, f"🔁 Retry #{task.id}", f"🔁 重试 #{task.id}"), f"tk:r:{task.id}".encode()))
-    rows = chunk_buttons(buttons, 2)
-    rows.append([Button.inline(tr(lang, "🔄 Refresh", "🔄 刷新"), b"m:tasks"), Button.inline(tr(lang, "📊 Status", "📊 状态"), b"m:status")])
+    lines.append(
+        tr(
+            lang,
+            "\n💡 <i>Send <code>/tasks &lt;ID&gt;</code> to inspect, cancel, or retry a specific task (e.g. <code>/tasks 1</code>).</i>",
+            "\n💡 <i>发送 <code>/tasks &lt;ID&gt;</code> 查看、取消或重试指定任务（如 <code>/tasks 1</code>）。</i>",
+        )
+    )
+    rows: list[list[Any]] = []
+    nav = pagination_row("m:tasks", page, total_pages, lang=lang)
+    if nav:
+        rows.append(nav)
+    rows.append(
+        [
+            Button.inline(tr(lang, "🔄 Refresh", "🔄 刷新"), f"m:tasks:{page}".encode()),
+            Button.inline(tr(lang, "📊 Status", "📊 状态"), b"m:status"),
+        ]
+    )
     rows.append([back_button(b"m:home", lang=lang)])
+    return "\n".join(lines), rows
+
+
+async def task_detail_view(ctx: AppContext, task_id: int) -> tuple[str, list[list[Any]]]:
+    lang = ctx.lang
+    task = await ctx.repo.get_task(task_id)
+    if task is None:
+        return tr(lang, "Task does not exist.", "任务不存在。"), [[back_button(b"m:tasks", lang=lang)]]
+    counts = await ctx.repo.task_job_counts(task.id)
+    open_jobs = sum(v for k, v in counts.items() if k not in TERMINAL_STATUSES)
+    span = f"{task.start_id}-{task.end_id}" if task.end_id and task.end_id != task.start_id else f"{task.start_id}"
+    lines = [
+        tr(lang, f"<b>📋 Task #{task.id}</b>", f"<b>📋 任务 #{task.id}</b>"),
+        f"{tr(lang, 'Status', '状态')}: <code>{esc(task.status)}</code> ({esc(task.kind)})",
+        f"{tr(lang, 'Source', '来源')}: {esc(task.source_title or task.source_chat_id)} <code>{esc(task.source_chat_id)}</code>",
+    ]
+    if task.source_topic_id:
+        lines.append(f"Topic: <code>{task.source_topic_id}</code>")
+    lines.extend(
+        [
+            f"{tr(lang, 'Messages', '消息区间')}: <code>{span}</code>",
+            f"{tr(lang, 'Targets', '目的地 ID')}: <code>{esc(task.target_ids)}</code>",
+            f"{tr(lang, 'Progress', '进度')}: ✅{counts.get('done', 0)} · ⏭{counts.get('skipped', 0)} · ❌{counts.get('failed', 0)} · ⏳{open_jobs}",
+        ]
+    )
+    if task.error:
+        lines.append(f"{tr(lang, 'Error', '错误')}: <code>{esc(task.error)}</code>")
+
+    action_row: list[Any] = []
+    if task.status in {"scanning", "queued"}:
+        action_row.append(Button.inline(tr(lang, f"✖️ Cancel #{task.id}", f"✖️ 取消 #{task.id}"), f"tk:x:{task.id}".encode()))
+    if counts.get("failed"):
+        action_row.append(Button.inline(tr(lang, f"🔁 Retry #{task.id}", f"🔁 重试 #{task.id}"), f"tk:r:{task.id}".encode()))
+    rows: list[list[Any]] = []
+    if action_row:
+        rows.append(action_row)
+    rows.append(
+        [
+            Button.inline(tr(lang, "🔄 Refresh", "🔄 刷新"), f"tk:v:{task.id}".encode()),
+            back_button(b"m:tasks", lang=lang),
+        ]
+    )
     return "\n".join(lines), rows
 
 
 # ---------------------------------------------------------------- link flow
 
 
-def _selection_view(ctx: AppContext, token: str, selection: PendingSelection, targets: list[Any]) -> tuple[str, list]:
+def _selection_view(
+    ctx: AppContext,
+    token: str,
+    selection: PendingSelection,
+    targets: list[Any],
+    page: int = 0,
+) -> tuple[str, list[list[Any]]]:
     lang = ctx.lang
     count = selection.end - selection.start + 1
     span = (
@@ -204,23 +343,54 @@ def _selection_view(ctx: AppContext, token: str, selection: PendingSelection, ta
         else tr(lang, f"{selection.start}–{selection.end} ({count} IDs)", f"{selection.start}–{selection.end}（{count} 个 ID）")
     )
     topic = f"\nTopic: {selection.topic_id}" if selection.topic_id else ""
+    page_items, page, total_pages = paginate_items(targets, page, PAGE_SIZE)
+    selection.page = page
+    page_suffix = f" ({page + 1}/{total_pages})" if total_pages > 1 else ""
+    target_lines = "\n".join(f"• {esc(target_label(t, lang))}" for t in page_items)
     text = tr(
         lang,
-        f"<b>📥 New Transfer Task</b>\nSource: <code>{esc(selection.chat)}</code>{topic}\nMessages: {span}\n\nSelect target(s):",
-        f"<b>📥 新搬运任务</b>\n来源：<code>{esc(selection.chat)}</code>{topic}\n消息：{span}\n\n选择目的地（可多选）：",
+        f"<b>📥 New Transfer Task</b>\n"
+        f"Source: <code>{esc(selection.chat)}</code>{topic}\n"
+        f"Messages: {span}\n\n"
+        f"<b>Available Targets{page_suffix}:</b>\n{target_lines}\n\n"
+        f"💬 Reply with target ID(s) (comma-separated, e.g. <code>1</code> or <code>1, 2</code>) to start immediately:",
+        f"<b>📥 新搬运任务</b>\n"
+        f"来源：<code>{esc(selection.chat)}</code>{topic}\n"
+        f"消息：{span}\n\n"
+        f"<b>可用目的地{page_suffix}：</b>\n{target_lines}\n\n"
+        f"💬 请直接回复目的地编号（多个用逗号分隔，如 <code>1</code> 或 <code>1, 2</code>）立即启动任务：",
     )
-    buttons = [
-        Button.inline(f"{'✅' if t.id in selection.selected else '⬜'} {target_label(t, lang)}", f"sel:{token}:{t.id}".encode())
-        for t in targets
-    ]
-    rows = chunk_buttons(buttons, 1)
-    rows.append(
-        [
-            Button.inline(tr(lang, "🚀 Start", "🚀 开始"), f"sel:{token}:go".encode()),
-            Button.inline(tr(lang, "✖️ Cancel", "✖️ 取消"), f"sel:{token}:x".encode()),
-        ]
-    )
+    rows: list[list[Any]] = []
+    nav = pagination_row(f"sel:{token}:p", page, total_pages, lang=lang)
+    if nav:
+        rows.append(nav)
+    rows.append([Button.inline(tr(lang, "✖️ Cancel", "✖️ 取消"), f"sel:{token}:x".encode())])
     return text, rows
+
+
+async def _start_task_from_selection(
+    ctx: AppContext,
+    selection: PendingSelection,
+    target_ids: list[int],
+    chat_id: int | None,
+    respond_fn: Any,
+) -> Any:
+    lang = ctx.lang
+    task = await ctx.repo.create_task(
+        kind="adhoc",
+        source_chat_id=selection.chat,
+        source_topic_id=selection.topic_id,
+        start_id=selection.start,
+        end_id=selection.end,
+        target_ids=sorted(set(target_ids)),
+        created_by=selection.user_id,
+        notify_chat_id=chat_id,
+        status="scanning",
+    )
+    msg = await respond_fn(tr(lang, f"🔎 Scanning task #{task.id}…", f"🔎 任务 #{task.id} 扫描中…"))
+    msg_id = getattr(msg, "id", None)
+    launch_scan(ctx, task.id, chat_id, msg_id)
+    return task
 
 
 async def handle_link(event: Any, ctx: AppContext, parsed: ParsedLink) -> None:
@@ -244,27 +414,83 @@ async def handle_link(event: Any, ctx: AppContext, parsed: ParsedLink) -> None:
     )
     if len(targets) == 1:
         selection.selected.add(targets[0].id)
-    ctx.state.selections[token] = selection
-    text, buttons = _selection_view(ctx, token, selection, targets)
+    ctx.state.set_selection(token, selection)
+    text, buttons = _selection_view(ctx, token, selection, targets, page=0)
     await event.respond(text, buttons=buttons)
+
+
+async def handle_selection_text(event: Any, ctx: AppContext) -> bool:
+    """Consume a private text reply if the user has a pending link target selection."""
+
+    entry = ctx.state.get_user_selection(event.sender_id)
+    if entry is None:
+        return False
+    token, selection = entry
+    raw = (event.raw_text or "").strip()
+    # If the user sends a new Telegram link instead of target IDs, let router.py treat it as a new link request.
+    if "t.me/" in raw or raw.startswith("tg://"):
+        return False
+    lang = ctx.lang
+    cancel_btn = [[Button.inline(tr(lang, "✖️ Cancel", "✖️ 取消"), f"sel:{token}:x".encode())]]
+    try:
+        chosen_ids = target_id_list(raw)
+    except ValueError as exc:
+        await event.respond(
+            tr(
+                lang,
+                f"⚠️ {esc(exc)}\nPlease reply with target ID(s) (e.g. <code>1</code> or <code>1, 2</code>):",
+                f"⚠️ {esc(exc)}\n请回复目的地编号（如 <code>1</code> 或 <code>1, 2</code>）：",
+            ),
+            buttons=cancel_btn,
+        )
+        return True
+
+    targets = await ctx.repo.list_targets(enabled_only=True)
+    valid_ids = {t.id for t in targets}
+    missing = [tid for tid in chosen_ids if tid not in valid_ids]
+    if missing:
+        missing_str = ", ".join(f"#{tid}" for tid in missing)
+        await event.respond(
+            tr(
+                lang,
+                f"⚠️ Enabled target(s) not found: <code>{esc(missing_str)}</code>.\nPlease reply with valid target ID(s):",
+                f"⚠️ 未找到可用的目的地：<code>{esc(missing_str)}</code>。\n请重新回复有效的目的地编号：",
+            ),
+            buttons=cancel_btn,
+        )
+        return True
+
+    ctx.state.pop_selection(token)
+    await _start_task_from_selection(ctx, selection, chosen_ids, event.chat_id, event.respond)
+    return True
 
 
 async def on_selection(event: Any, ctx: AppContext) -> None:
     lang = ctx.lang
-    _, token, action = event.data.decode().split(":", 2)
+    parts = event.data.decode().split(":")
+    token, action = parts[1], parts[2]
     selection = ctx.state.selections.get(token)
     if selection is None or selection.user_id != event.sender_id:
         await event.answer(tr(lang, "Selection expired. Please resend the link.", "该选择已过期，请重新发送链接"), alert=True)
         return
     if action == "x":
-        ctx.state.selections.pop(token, None)
-        await event.edit(tr(lang, "Cancelled.", "已取消。"))
+        ctx.state.pop_selection(token)
+        await event.edit(
+            tr(lang, "✖️ Cancelled.", "✖️ 已取消。"),
+            buttons=[[back_button(b"m:home", lang=lang)]],
+        )
+        return
+    if action == "p":
+        page = int(parts[3]) if len(parts) > 3 and parts[3].lstrip("-").isdigit() else 0
+        targets = await ctx.repo.list_targets(enabled_only=True)
+        text, buttons = _selection_view(ctx, token, selection, targets, page=page)
+        await event.edit(text, buttons=buttons)
         return
     if action == "go":
         if not selection.selected:
             await event.answer(tr(lang, "Please select at least one target", "请至少选择一个目的地"), alert=True)
             return
-        ctx.state.selections.pop(token, None)
+        ctx.state.pop_selection(token)
         task = await ctx.repo.create_task(
             kind="adhoc",
             source_chat_id=selection.chat,
@@ -283,7 +509,7 @@ async def on_selection(event: Any, ctx: AppContext) -> None:
     target_id = int(action)
     selection.selected.symmetric_difference_update({target_id})
     targets = await ctx.repo.list_targets(enabled_only=True)
-    text, buttons = _selection_view(ctx, token, selection, targets)
+    text, buttons = _selection_view(ctx, token, selection, targets, page=selection.page)
     await event.edit(text, buttons=buttons)
 
 
@@ -305,7 +531,11 @@ def launch_scan(ctx: AppContext, task_id: int, chat_id: int | None, message_id: 
             if finished is not None:
                 text += tr(lang, "\n(No new items to process; task completed)", "\n（没有需要处理的新内容，任务已结束）")
             else:
-                text += tr(lang, "\nYou will be notified when complete. Check /tasks for progress.", "\n完成后会通知你。/tasks 查看进度。")
+                text += tr(
+                    lang,
+                    f"\nYou will be notified when complete. Send <code>/tasks {task_id}</code> for progress.",
+                    f"\n完成后会通知你。发送 <code>/tasks {task_id}</code> 查看进度。",
+                )
         except asyncio.CancelledError:
             text = tr(lang, f"✖️ Task #{task_id} cancelled", f"✖️ 任务 #{task_id} 已取消")
         except Exception as exc:
@@ -329,7 +559,17 @@ def launch_scan(ctx: AppContext, task_id: int, chat_id: int | None, message_id: 
 
 
 async def cmd_start(event: Any, ctx: AppContext) -> None:
-    await event.respond(help_text(ctx.lang), buttons=main_menu(ctx.lang))
+    admin_ids = getattr(getattr(ctx, "boot", None), "admin_ids", None) or (event.sender_id,)
+    await sync_bot_commands(getattr(getattr(ctx, "clients", None), "bot", None), ctx.lang, admin_ids)
+    text, buttons = await start_view(ctx)
+    await event.respond(text, buttons=buttons)
+
+
+async def cmd_help(event: Any, ctx: AppContext) -> None:
+    await event.respond(
+        help_text(ctx.lang),
+        buttons=[[back_button(b"m:home", lang=ctx.lang)]],
+    )
 
 
 async def cmd_lang(event: Any, ctx: AppContext) -> None:
@@ -343,8 +583,11 @@ async def cmd_lang(event: Any, ctx: AppContext) -> None:
     else:
         new_lang = "zh" if ctx.lang == "en" else "en"
     await ctx.store.set("ui.language", new_lang)
+    admin_ids = getattr(getattr(ctx, "boot", None), "admin_ids", None) or (event.sender_id,)
+    await sync_bot_commands(getattr(getattr(ctx, "clients", None), "bot", None), new_lang, admin_ids)
     msg = "🌐 语言已切换为：<b>简体中文</b>" if new_lang == "zh" else "🌐 Language switched to: <b>English</b>"
-    await event.respond(msg + "\n\n" + help_text(new_lang), buttons=main_menu(new_lang))
+    text, buttons = await start_view(ctx)
+    await event.respond(msg + "\n\n" + text, buttons=buttons)
 
 
 async def cmd_status(event: Any, ctx: AppContext) -> None:
@@ -353,7 +596,20 @@ async def cmd_status(event: Any, ctx: AppContext) -> None:
 
 
 async def cmd_tasks(event: Any, ctx: AppContext) -> None:
-    text, buttons = await tasks_view(ctx)
+    arg = command_args(event).lstrip("#").strip()
+    if arg:
+        if not arg.isdigit():
+            await event.respond(
+                ctx.t(
+                    "Usage: /tasks <code>[task_id]</code>",
+                    "用法：/tasks <code>[任务ID]</code>",
+                )
+            )
+            return
+        text, buttons = await task_detail_view(ctx, int(arg))
+        await event.respond(text, buttons=buttons)
+        return
+    text, buttons = await tasks_view(ctx, page=0)
     await event.respond(text, buttons=buttons)
 
 
@@ -452,15 +708,26 @@ def _named_bytes(content: bytes, name: str) -> Any:
 
 
 async def on_menu(event: Any, ctx: AppContext) -> None:
-    action = event.data.decode().split(":", 1)[1]
-    if action in {"help", "home"}:
-        await event.edit(help_text(ctx.lang), buttons=main_menu(ctx.lang))
+    parts = event.data.decode().split(":")
+    action = parts[1]
+    if action == "home":
+        text, buttons = await start_view(ctx)
+        await event.edit(text, buttons=buttons)
+        return
+    if action == "help":
+        await event.edit(
+            help_text(ctx.lang),
+            buttons=[[back_button(b"m:home", lang=ctx.lang)]],
+        )
         return
     if action == "lang":
         new_lang = "zh" if ctx.lang == "en" else "en"
         await ctx.store.set("ui.language", new_lang)
+        admin_ids = getattr(getattr(ctx, "boot", None), "admin_ids", None) or (event.sender_id,)
+        await sync_bot_commands(getattr(getattr(ctx, "clients", None), "bot", None), new_lang, admin_ids)
         await event.answer("已切换为简体中文" if new_lang == "zh" else "Switched to English")
-        await event.edit(help_text(new_lang), buttons=main_menu(new_lang))
+        text, buttons = await start_view(ctx)
+        await event.edit(text, buttons=buttons)
         return
     if action == "pause":
         await ctx.worker.pause("Paused by admin")
@@ -474,7 +741,8 @@ async def on_menu(event: Any, ctx: AppContext) -> None:
         ctx.worker.wake()
         await event.answer(ctx.t(f"Recovered {count} interrupted job(s)", f"已恢复 {count} 个中断任务"))
     if action == "tasks":
-        text, buttons = await tasks_view(ctx)
+        page = int(parts[2]) if len(parts) > 2 and parts[2].lstrip("-").isdigit() else 0
+        text, buttons = await tasks_view(ctx, page=page)
     else:
         text, buttons = await status_view(ctx)
     await event.edit(text, buttons=buttons)
@@ -489,17 +757,18 @@ async def on_task_button(event: Any, ctx: AppContext) -> None:
         count = await ctx.repo.retry_jobs(task_id=task_id)
         ctx.worker.wake()
         await event.answer(ctx.t(f"Re-queued {count} item(s)", f"已重新排队 {count} 项"))
-    text, buttons = await tasks_view(ctx)
+    text, buttons = await task_detail_view(ctx, task_id)
     await event.edit(text, buttons=buttons)
 
 
 def register(bot: TelegramClient, ctx: AppContext) -> None:
     commands = {
         "start": cmd_start,
-        "help": cmd_start,
+        "help": cmd_help,
         "lang": cmd_lang,
         "status": cmd_status,
         "tasks": cmd_tasks,
+        "task": cmd_tasks,
         "pause": cmd_pause,
         "resume": cmd_resume,
         "recover": cmd_recover,

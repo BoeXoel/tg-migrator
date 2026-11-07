@@ -6,10 +6,19 @@ from types import SimpleNamespace
 import pytest
 from telethon.tl import types
 
-from app.bot.handlers_config import config_view
-from app.bot.handlers_route import _parse_range, _parse_source, routes_view
-from app.bot.handlers_target import targets_view
-from app.bot.ui import extract_secret_text, target_id_list, yes_no
+from app.bot.context import BotState, PendingSelection
+from app.bot.handlers_config import config_view, rules_view
+from app.bot.handlers_route import _parse_range, _parse_source, route_view, routes_view
+from app.bot.handlers_target import target_view, targets_view
+from app.bot.handlers_task import (
+    _selection_view,
+    handle_selection_text,
+    help_text,
+    start_view,
+    task_detail_view,
+    tasks_view,
+)
+from app.bot.ui import extract_secret_text, paginate_items, sync_bot_commands, target_id_list, yes_no
 from app.db.engine import create_engine, init_models, make_sessionmaker
 from app.db.repository import Repository
 from app.engine.filters import ContentFilter, Rule, validate_rule
@@ -113,6 +122,126 @@ def test_subpanels_have_back_to_main_menu_and_bilingual_labels(tmp_path):
                     assert "Settings" in cfg_text
                 else:
                     assert "设置" in cfg_text
+
+                # Verify /start vs /help split
+                st_text, st_rows = await start_view(ctx)
+                hp_text = help_text(lang)
+                assert st_text != hp_text
+                if lang == "en":
+                    assert "Quick Setup & Usage" in st_text
+                    assert "Command Reference" in hp_text
+                else:
+                    assert "初次配置与使用" in st_text
+                    assert "命令速查字典" in hp_text
+        finally:
+            await engine.dispose()
+
+    asyncio.run(scenario())
+
+
+def test_paginated_list_views_and_zero_item_buttons(tmp_path):
+    async def scenario():
+        engine = create_engine(f"sqlite+aiosqlite:///{tmp_path / 'page.db'}")
+        try:
+            await init_models(engine)
+            repo = Repository(engine, make_sessionmaker(engine), SecretBox(load_or_create_key("", tmp_path)))
+            store = SettingsStore(repo, default_language="zh")
+            await store.load()
+            ctx = SimpleNamespace(repo=repo, store=store, lang="zh", state=BotState())
+
+            # Create 15 targets, 12 routes, and 12 tasks
+            for i in range(1, 16):
+                await repo.add_target(name=f"tg_{i}", type="local", config={"path": f"p{i}"})
+            for i in range(1, 13):
+                await repo.add_route(
+                    name=f"rt_{i}",
+                    source_chat_id=f"-100{i}",
+                    source_title=f"src_{i}",
+                    target_ids=[1],
+                    watch_enabled=True,
+                )
+            for i in range(1, 13):
+                await repo.create_task(
+                    kind="adhoc",
+                    source_chat_id="-100999",
+                    start_id=i,
+                    end_id=i,
+                    target_ids=[1],
+                    created_by=1,
+                    status="queued",
+                )
+
+            def cb_data(rows):
+                return [
+                    getattr(btn, "data", None)
+                    or getattr(getattr(btn, "type", None), "data", None)
+                    or getattr(getattr(btn, "button", None), "data", b"")
+                    for row in rows
+                    for btn in row
+                ]
+
+            # 1) /targets page 0 shows 10 items in text, pagination row, and NO per-target buttons (tg:v:*)
+            tg_text_0, tg_rows_0 = await targets_view(ctx, page=0)
+            assert "(1/2)" in tg_text_0
+            assert "tg_1" in tg_text_0 and "tg_10" in tg_text_0 and "tg_11" not in tg_text_0
+            assert "/targets &lt;ID&gt;" in tg_text_0
+            tg_callbacks = cb_data(tg_rows_0)
+            assert not any(cb.startswith(b"tg:v:") for cb in tg_callbacks)
+            assert b"tg:list:1" in tg_callbacks
+
+            tg_text_1, _ = await targets_view(ctx, page=1)
+            assert "(2/2)" in tg_text_1 and "tg_15" in tg_text_1
+
+            # Direct target view still provides single-target action buttons
+            detail_tg_text, detail_tg_rows = await target_view(ctx, 1)
+            assert "tg_1" in detail_tg_text
+            assert any(cb.startswith(b"tg:en:1") for cb in cb_data(detail_tg_rows))
+
+            # 2) /routes page 0 shows 10 items in text, pagination row, and NO per-route buttons (rt:v:*)
+            rt_text_0, rt_rows_0 = await routes_view(ctx, page=0)
+            assert "(1/2)" in rt_text_0
+            assert "rt_1" in rt_text_0 and "rt_10" in rt_text_0 and "rt_11" not in rt_text_0
+            rt_callbacks = cb_data(rt_rows_0)
+            assert not any(cb.startswith(b"rt:v:") for cb in rt_callbacks)
+            assert b"rt:list:1" in rt_callbacks
+
+            detail_rt_text, _ = await route_view(ctx, 1)
+            assert "rt_1" in detail_rt_text
+
+            # 3) /tasks page 0 shows 10 items in text, pagination row, and NO per-task buttons
+            tk_text_0, tk_rows_0 = await tasks_view(ctx, page=0)
+            assert "(1/2)" in tk_text_0
+            tk_callbacks = cb_data(tk_rows_0)
+            assert not any(cb.startswith((b"tk:x:", b"tk:r:")) for cb in tk_callbacks)
+            assert b"m:tasks:1" in tk_callbacks
+
+            # Single task detail view has cancel button
+            tk_detail_text, tk_detail_rows = await task_detail_view(ctx, 1)
+            assert "#1" in tk_detail_text
+            assert any(cb == b"tk:x:1" for cb in cb_data(tk_detail_rows))
+
+            # 4) Link selection card lists 10 targets per page as text + reply prompt, with no target toggle buttons
+            targets = await repo.list_targets(enabled_only=True)
+            sel = PendingSelection(user_id=1, chat="-100888", topic_id=None, start=1, end=5)
+            sel_text, sel_rows = _selection_view(ctx, "tok1", sel, targets, page=0)
+            assert "(1/2)" in sel_text and "回复目的地编号" in sel_text
+            sel_callbacks = cb_data(sel_rows)
+            assert b"sel:tok1:p:1" in sel_callbacks
+            assert b"sel:tok1:x" in sel_callbacks
+            assert not any(cb == b"sel:tok1:1" for cb in sel_callbacks)
+
+            # 5) Bot command registration helper (clears default scope and sets Peer scope ONLY for admins)
+            calls = []
+
+            async def fake_bot(req):
+                calls.append(req)
+
+            await sync_bot_commands(fake_bot, "zh", admin_ids=[12345])
+            assert len(calls) == 2
+            assert isinstance(calls[0].scope, types.BotCommandScopeDefault)
+            assert isinstance(calls[1].scope, types.BotCommandScopePeer)
+            cmd_names = [c.command for c in calls[1].commands]
+            assert {"start", "help", "targets", "routes", "tasks"}.issubset(cmd_names)
         finally:
             await engine.dispose()
 

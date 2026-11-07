@@ -9,6 +9,7 @@ import signal
 from app import __version__
 from app.bot.context import AppContext
 from app.bot.router import register_all
+from app.bot.ui import sync_bot_commands
 from app.config import BootstrapConfig
 from app.db.engine import create_engine, describe_database, init_models, make_sessionmaker, normalise_database_url
 from app.db.repository import Repository
@@ -84,6 +85,7 @@ async def run_service(boot: BootstrapConfig) -> None:
         bot = await ctx.clients.start_bot()
         ctx.notifier.bot = bot
         register_all(bot, ctx)
+        await sync_bot_commands(bot, ctx.lang, ctx.boot.admin_ids)
         ctx.clients.on_reader_ready(on_reader_ready)
         await ctx.worker.load_state()
         reader_ok = await ctx.clients.start_reader()

@@ -132,7 +132,7 @@ WebDAV 目的地兼容 **OpenList**、**Nextcloud**、**ownCloud**、**Synology 
 Telegram 普通账号与 Bot 的单文件上传上限为 **2,000 MiB（约 2GB）**，Telegram Premium 会员账号上限为 **4,000 MiB（约 4GB）**。针对超过上传上限的大文件，系统提供两种自动兜底机制：
 
 1. **配置超限备用归档目的地（推荐）**：
-   进入 **`🎯 目的地`** → 选择对应的 Telegram 目的地 → 点击 **`🗄 设置超限备用`** → 选择一个本地目录或 WebDAV 目的地。配置后，2GB 以内的文件正常发往 Telegram 群组，超出上限的大文件会自动转存至指定的本地 NAS 或 WebDAV 目的地。
+   发送 `/targets <ID>`（例如 `/targets 1`）打开对应 Telegram 目的地的管理面板 → 点击 **`🗄 设置超限备用`** → 回复一个本地目录或 WebDAV 目的地的编号。配置后，2GB 以内的文件正常发往 Telegram 群组，超出上限的大文件会自动转存至指定的本地 NAS 或 WebDAV 目的地。
 2. **启用 Premium 读取号兜底上传**：
    若已登录的读取账号具备 Telegram Premium 会员资格，且在目标 Telegram 群组/频道中拥有发言权限，可执行：
    ```text

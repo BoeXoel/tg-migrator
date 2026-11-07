@@ -23,7 +23,7 @@ from app.telegram.limiter import TelegramLimiter
 
 @dataclass
 class PendingSelection:
-    """A parsed link waiting for the admin to pick targets."""
+    """A parsed link waiting for the admin to reply with target ID(s)."""
 
     user_id: int
     chat: str
@@ -31,12 +31,14 @@ class PendingSelection:
     start: int
     end: int
     selected: set[int] = field(default_factory=set)
+    page: int = 0
     created: float = field(default_factory=time.monotonic)
 
 
 @dataclass
 class BotState:
     selections: dict[str, PendingSelection] = field(default_factory=dict)
+    user_selections: dict[int, str] = field(default_factory=dict)
     bind_codes: dict[str, tuple[int, float]] = field(default_factory=dict)
     import_modes: dict[int, str] = field(default_factory=dict)
     scan_tasks: dict[int, asyncio.Task] = field(default_factory=dict)
@@ -46,6 +48,38 @@ class BotState:
     def new_token(self) -> str:
         self._expire()
         return secrets.token_urlsafe(6)
+
+    def set_selection(self, token: str, selection: PendingSelection) -> None:
+        self._expire()
+        old_token = self.user_selections.pop(selection.user_id, None)
+        if old_token:
+            self.selections.pop(old_token, None)
+        self.selections[token] = selection
+        self.user_selections[selection.user_id] = token
+
+    def get_user_selection(self, user_id: int) -> tuple[str, PendingSelection] | None:
+        self._expire()
+        token = self.user_selections.get(user_id)
+        if not token:
+            return None
+        selection = self.selections.get(token)
+        if selection is None:
+            self.user_selections.pop(user_id, None)
+            return None
+        return token, selection
+
+    def pop_selection(self, token: str) -> PendingSelection | None:
+        selection = self.selections.pop(token, None)
+        if selection is not None and self.user_selections.get(selection.user_id) == token:
+            self.user_selections.pop(selection.user_id, None)
+        return selection
+
+    def cancel_user_selection(self, user_id: int) -> bool:
+        token = self.user_selections.pop(user_id, None)
+        if token is not None:
+            self.selections.pop(token, None)
+            return True
+        return False
 
     def new_bind_code(self, user_id: int, ttl: int = 600) -> str:
         self._expire()
@@ -61,7 +95,9 @@ class BotState:
     def _expire(self) -> None:
         now = time.monotonic()
         for key in [k for k, v in self.selections.items() if now - v.created > 3600]:
-            self.selections.pop(key, None)
+            sel = self.selections.pop(key, None)
+            if sel is not None and self.user_selections.get(sel.user_id) == key:
+                self.user_selections.pop(sel.user_id, None)
         for key in [k for k, v in self.bind_codes.items() if v[1] < now]:
             self.bind_codes.pop(key, None)
 

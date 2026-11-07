@@ -23,9 +23,8 @@ To transfer a single message, an entire album, a message ID range, or a topic's 
 ### Target Selection & Execution
 
 When a link or range is submitted:
-1. The Bot replies with a **target selection card** listing all enabled destinations (`☑️ #1 ArchiveGroup_t128`, `⬜ #2 nas_movies`, etc.).
-2. Tap one or more destinations to toggle selection (`☑️` / `⬜`). Multi-destination fan-out is supported.
-3. Tap **`🚀 Start`** to launch the scanner and enqueue transfer jobs.
+1. The Bot replies with a **target selection card** displaying a paginated text list of enabled destinations (10 per page, with `⬅️ Prev` / `Next ➡️` navigation when more than 10 targets exist).
+2. Reply directly with one or more target IDs (comma-separated, e.g. `1` or `1, 2` for multi-destination fan-out) to launch the scanner and enqueue transfer jobs immediately, or tap **`✖️ Cancel`** to abort.
 
 > [!TIP] Automatic Album Grouping & Global Deduplication
 > - **Album Grouping**: When a single link points to one item inside a multi-item Telegram Album, TG Migrator automatically inspects surrounding messages for a matching `grouped_id`, groups all items of the album, and delivers them together as an intact Album.
@@ -57,9 +56,8 @@ To prevent missed messages during network interruptions or container restarts, T
 
 ### Backfilling Historical Messages on a Route
 
-Open **`🔁 Routes`** → select a route → tap **`📜 Scan History`**:
-- **`All History (from 1)`**: Scans the entire source chat (or source Topic) from message `1` to the latest message.
-- **`Custom Range`**: Prompts for `start_id - end_id` (e.g. `1 - 1000` or two message links).
+Send `/routes <ID>` (e.g. `/routes 1` or `/route 1`) to open the route's management card, then tap **`📜 Scan History`**:
+- **Message Range**: Enter `start_id - end_id` (e.g. `1 - 5000` or two message links) to backfill historical messages.
 - **`⏩ Catch Up Now`**: Triggers an immediate incremental watermark poll without waiting for the scheduled interval.
 
 ---

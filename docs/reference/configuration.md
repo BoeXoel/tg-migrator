@@ -8,18 +8,20 @@ This page provides a complete reference for all Telegram Bot commands, `.env` bo
 
 | Command | Arguments | Description |
 | :--- | :--- | :--- |
-| `/start` or `/help` | — | Open the main interactive control panel |
+| `/start` | — | Open the quick-start onboarding & system readiness overview panel |
+| `/help` | — | Display the full command reference dictionary |
 | `/lang` | `[en\|zh]` | Toggle or set Bot UI and notification language (`en` or `zh`) |
 | `/status` | — | Show account capabilities, queue counters, worker state, and free disk space |
-| `/tasks` | — | List recent migration tasks and inspect progress |
-| `/targets` | — | List and manage all destinations (`telegram`, `local`, `webdav`) |
+| `/tasks` (or `/task`) | `[task_id]` | Paginated list of recent tasks (10/page), or inspect/cancel/retry task `#id` |
+| `/targets` (or `/target`) | `[target_id]` | Paginated list of destinations (10/page), or open management card for target `#id` |
 | `/bind` | `[code]` | In a group/topic: bind it as a target. In private chat: generate a 10-min one-time bind code |
 | `/add_tg` | `<chat> [topic_id]` | Manually add a Telegram target by `@username` or `-100ID` and optional Forum Topic ID |
 | `/add_local` | — | Launch wizard to create a Local NAS directory target under `ARCHIVE_ROOT` |
 | `/add_webdav` | — | Launch wizard to create a WebDAV server target |
-| `/routes` | — | List and manage continuous Watch Routes |
+| `/routes` (or `/route`) | `[route_id]` | Paginated list of Watch Routes (10/page), or open management card for route `#id` |
 | `/add_route` | — | Launch wizard to create a new Watch Route |
-| `/route_set` | `<id> <key> <val\|->` | Override a runtime setting for a specific route (use `-` to remove override) |
+| `/route_set` | `<id> <key> <val>` | Override a runtime setting for a specific route |
+| `/route_unset` | `<id> <key>` | Remove a per-route setting override |
 | `/config` | — | Open the interactive runtime settings panel |
 | `/get` | `[section\|key]` | View all runtime settings, a specific section (e.g. `/get transfer`), or a single key |
 | `/set` | `<key> <value>` | Modify a runtime setting immediately (persisted in DB) |

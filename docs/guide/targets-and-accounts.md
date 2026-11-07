@@ -130,7 +130,7 @@ WebDAV destinations are compatible with **OpenList**, **Nextcloud**, **ownCloud*
 Standard Telegram accounts and Bots support uploading files up to **2,000 MiB (~2 GiB)**, whereas Telegram Premium user accounts support up to **4,000 MiB (~4 GiB)**. Two built-in fallback mechanisms handle oversized files:
 
 1. **Configure an Oversized Archive Fallback Target (Recommended)**:
-   Open **`🎯 Targets`** → select the Telegram target → tap **`🗄 Set Oversized Fallback`** → select a Local NAS or WebDAV target. Files within Telegram's limit are delivered to Telegram as usual, while oversized files are automatically routed to the NAS or WebDAV fallback target.
+   Send `/targets <ID>` (e.g. `/targets 1`) to open the Telegram target's management card → tap **`🗄 Set Oversized Fallback`** → reply with the ID of a Local NAS or WebDAV target. Files within Telegram's limit are delivered to Telegram as usual, while oversized files are automatically routed to the NAS or WebDAV fallback target.
 2. **Enable Premium Reader Upload Fallback**:
    If the authenticated Reader account has Telegram Premium and permission to post in the destination chat, run:
    ```text

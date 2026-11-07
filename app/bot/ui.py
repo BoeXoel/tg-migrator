@@ -8,11 +8,11 @@ import time
 from dataclasses import dataclass, field
 from typing import Any, Awaitable, Callable
 
-from telethon import Button
-from telethon.tl import types
+from telethon import Button, functions, types
 
 from app.db.models import Target
 
+PAGE_SIZE = 10
 TYPE_ICONS = {"telegram": "📨", "local": "💽", "webdav": "☁️"}
 
 STATUS_LABELS_I18N: dict[str, dict[str, str]] = {
@@ -148,6 +148,98 @@ def target_detail(target: Target, config: dict[str, Any], fallback: Target | Non
 
 def chunk_buttons(buttons: list[Any], per_row: int = 2) -> list[list[Any]]:
     return [buttons[i : i + per_row] for i in range(0, len(buttons), per_row)]
+
+
+def paginate_items(items: list[Any] | tuple[Any, ...], page: int = 0, page_size: int = PAGE_SIZE) -> tuple[list[Any], int, int]:
+    """Return ``(page_slice, clamped_page, total_pages)``."""
+
+    total = len(items)
+    total_pages = max(1, (total + page_size - 1) // page_size)
+    clamped = max(0, min(int(page), total_pages - 1))
+    start = clamped * page_size
+    return list(items[start : start + page_size]), clamped, total_pages
+
+
+def pagination_row(prefix: str, page: int, total_pages: int, *, lang: str = "en") -> list[Any] | None:
+    """Build a ``[Prev, Page X/Y, Next]`` button row when ``total_pages > 1``."""
+
+    if total_pages <= 1:
+        return None
+    row: list[Any] = []
+    if page > 0:
+        row.append(Button.inline(tr(lang, "⬅️ Prev", "⬅️ 上一页"), f"{prefix}:{page - 1}".encode()))
+    row.append(Button.inline(f"📄 {page + 1}/{total_pages}", f"{prefix}:{page}".encode()))
+    if page + 1 < total_pages:
+        row.append(Button.inline(tr(lang, "Next ➡️", "下一页 ➡️"), f"{prefix}:{page + 1}".encode()))
+    return row
+
+
+BOT_COMMANDS_I18N: dict[str, list[tuple[str, str]]] = {
+    "en": [
+        ("start", "Quick start & system overview"),
+        ("help", "Full command reference"),
+        ("status", "System & queue status"),
+        ("tasks", "List tasks or /tasks <id>"),
+        ("targets", "List targets or /targets <id>"),
+        ("routes", "List watch routes or /routes <id>"),
+        ("config", "Interactive settings panel"),
+        ("filters", "Content filter rules"),
+        ("bind", "Bind Telegram group/topic target"),
+        ("login", "Log in personal Reader account"),
+        ("lang", "Switch language (EN / 中文)"),
+        ("cancel", "Cancel current operation"),
+    ],
+    "zh": [
+        ("start", "快速上手与系统概览"),
+        ("help", "完整命令速查字典"),
+        ("status", "运行与队列状态"),
+        ("tasks", "任务列表或 /tasks <ID>"),
+        ("targets", "目的地列表或 /targets <ID>"),
+        ("routes", "监听路由列表或 /routes <ID>"),
+        ("config", "交互式参数设置面板"),
+        ("filters", "内容过滤规则"),
+        ("bind", "绑定 Telegram 群组/子话题目的地"),
+        ("login", "登录个人读取账号"),
+        ("lang", "切换语言（中文 / EN）"),
+        ("cancel", "取消当前向导或操作"),
+    ],
+}
+
+
+async def sync_bot_commands(bot: Any, lang: str = "en", admin_ids: Any = ()) -> None:
+    """Register the Bot's ``/`` command autocomplete menu ONLY for ``ADMIN_IDS``.
+
+    Clears the global default command scope first so non-admin strangers see no
+    commands at all, then sets ``BotCommandScopePeer`` exclusively for each admin.
+    """
+
+    if bot is None or not callable(getattr(bot, "__call__", None)):
+        return
+    entries = BOT_COMMANDS_I18N.get(lang, BOT_COMMANDS_I18N["en"])
+    commands = [types.BotCommand(command=cmd, description=desc) for cmd, desc in entries]
+    try:
+        await bot(
+            functions.bots.ResetBotCommandsRequest(
+                scope=types.BotCommandScopeDefault(),
+                lang_code="",
+            )
+        )
+    except Exception:
+        pass
+
+    get_peer = getattr(bot, "get_input_entity", None)
+    for uid in admin_ids or ():
+        try:
+            peer = await get_peer(int(uid)) if callable(get_peer) else types.InputPeerUser(int(uid), 0)
+            await bot(
+                functions.bots.SetBotCommandsRequest(
+                    scope=types.BotCommandScopePeer(peer=peer),
+                    lang_code="",
+                    commands=commands,
+                )
+            )
+        except Exception:
+            continue
 
 
 def back_button(data: bytes, text: str | None = None, *, lang: str = "en") -> Any:

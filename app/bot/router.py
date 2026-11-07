@@ -23,6 +23,7 @@ _COMMAND_RE = re.compile(r"^/[A-Za-z_]+(?:@\w+)?(?:\s|$)")
 async def cmd_cancel(event: Any, ctx: AppContext) -> None:
     wizard = ctx.state.wizards.cancel(event.sender_id)
     cancelled = wizard is not None
+    cancelled = ctx.state.cancel_user_selection(event.sender_id) or cancelled
     cancelled = await handlers_login.cancel_login(ctx, event.sender_id) or cancelled
     cancelled = ctx.state.import_modes.pop(event.sender_id, None) is not None or cancelled
     back_data = wizard.back_data if wizard is not None else b"m:home"
@@ -51,6 +52,8 @@ async def on_private_message(event: Any, ctx: AppContext) -> None:
     if await handlers_login.handle_login_text(event, ctx):
         return
     if ctx.state.wizards.has(event.sender_id) and await ctx.state.wizards.handle(event):
+        return
+    if await handlers_task.handle_selection_text(event, ctx):
         return
     document = event.message.document
     if document is not None:
