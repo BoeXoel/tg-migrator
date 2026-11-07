@@ -5,6 +5,18 @@ All notable changes to this project will be documented in this file.
 The format is based on [Keep a Changelog](https://keepachangelog.com/en/1.1.0/),
 and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0.html).
 
+## [0.0.3] - 2026-11-07
+
+### Added
+- **Bilingual VitePress Documentation Site (`docs/`)**: Comprehensive English (`/`) and Simplified Chinese (`/zh/`) documentation covering Docker deployment, directory permissions, `/login` inline keypad & 2FA, Forum Sub-Topic `/bind` workflows, Local NAS/WebDAV archiving, Watch Routes, command/setting dictionaries, and troubleshooting FAQ.
+- **Cloudflare Workers Static Assets Deployment (`.github/workflows/docs.yml`)**: Automated VitePress build and zero-script static asset deployment to Cloudflare Workers (`tg-migrator-docs`) with `workers_dev: false`.
+- **Automatic GitHub Release Publishing**: Updated `.github/workflows/docker-publish.yml` to automatically extract version notes from `CHANGELOG.md` and publish a GitHub Release whenever a new version is merged into `main`.
+
+### Changed
+- **Round-Robin Multi-Task Scheduling & Concurrency**: `Repository.fetch_due_jobs` and `Worker.run` now interleave active tasks and live-watch routes in fair Round-Robin waves (default `worker.concurrency = 3`) while preserving chronological message order within each task/stream.
+- **Independent Per-Operation Rate Locks**: Refactored `TelegramLimiter` so `read`, `download`, `upload`, and `copy` operations maintain independent locks and timers without blocking one another.
+- **Single-Upload Album Pacing & Tuned Cooldowns**: Fixed `TelegramTarget._send_album` so multi-item albums count as a single upload interval instead of pacing every intermediate chunk; tuned default `limits.upload_delay_seconds` to `10.0s`, `worker.batch_size` to `50` (counting only actual Telegram deliveries), and `worker.pause_between_batches_seconds` to `120s`.
+
 ## [0.0.2] - 2026-11-07
 
 ### Added
