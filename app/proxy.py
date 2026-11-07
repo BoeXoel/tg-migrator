@@ -3,7 +3,7 @@
 Telegram traffic uses the configured proxy without silent direct fallback.
 HTTP traffic (WebDAV) uses the proxy only for public destinations: internal
 addresses always connect directly, because a remote proxy cannot reach a LAN
-NAS or a Docker service such as ``http://alist:5244``.
+NAS or a Docker service such as ``http://openlist:5244``.
 """
 
 from __future__ import annotations

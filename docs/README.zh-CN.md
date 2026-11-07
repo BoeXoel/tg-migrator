@@ -3,7 +3,7 @@
 [English](../README.md) | **简体中文** | [文档](https://tg-migrator.isgay.top/zh/) | [Docker](https://hub.docker.com/r/boexoel/tg-migrator)
 
 > **通过 Telegram Bot 交互管控的自托管消息归档与多端路由服务**
-> 支持将你拥有合法访问权限的 Telegram 群组、频道或论坛 Topic 消息，同步与结构化归档至 **其他 Telegram 会话**、**本地 NAS 目录** 或 **WebDAV 存储（Alist / Nextcloud 等）**，兼顾一次性历史迁移与 7×24 小时实时监听同步。
+> 支持将你拥有合法访问权限的 Telegram 群组、频道或论坛 Topic 消息，同步与结构化归档至 **其他 Telegram 会话**、**本地 NAS 目录** 或 **WebDAV 存储（OpenList / Nextcloud 等）**，兼顾一次性历史迁移与 7×24 小时实时监听同步。
 
 ---
 
@@ -13,7 +13,7 @@
 - **多端存储目的地（Multi-Sink）**：
   - `telegram`：支持目标群组、频道及 Forum Topic。优先采用免下载的**原生复制（Native Copy）**；当跨会话无法直接复制或需清洗剧透遮罩时，自动回退为**本地流式下载重传**，完整保留视频宽高与时长、音频标签、语音波形、原始文件名及安全缩略图，并支持相册（Album）整组聚合发送。
   - `local`：结构化归档至容器挂载的本地目录（严格做 `ARCHIVE_ROOT` 路径越界防护，适配 NAS 本地盘）。
-  - `webdav`：支持公网 HTTPS 及内网 HTTP（如 `http://alist:5244/dav`），提供**本地缓存落盘后上传（Spool）**与**零落盘流式直传（Zero-Disk Stream）**两种模式。
+  - `webdav`：支持公网 HTTPS 及内网 HTTP（如 `http://openlist:5244/dav`），提供**本地缓存落盘后上传（Spool）**与**零落盘流式直传（Zero-Disk Stream）**两种模式。
 - **长期监听与多路路由（Watch & Route）**：支持配置“单来源（可精确到 Topic）→ 多目的地”的持久化路由；支持新消息实时监听（相册自动凑齐整组）与水位线（Watermark）定时巡检，服务重启后自动补齐期间遗漏的消息。
 - **全媒体与消息形态覆盖**：纯文本、图片、视频、GIF 动图、音频、语音、圆形视频消息（Video Note）、通用文件、贴纸；投票与地理位置等特殊消息支持原生复制。
 - **超大文件智能分流**：自动识别普通账号/Bot（2000 MiB）与 Telegram Premium（4000 MiB）上传上限；支持配置由 Premium 读取账号代发 2–4 GiB 大文件，或自动将超限文件降级转存至绑定的本地 / WebDAV 备用目的地。
@@ -178,7 +178,7 @@ PROXY_BYPASS_RESOLVE=true
 - **内网 WebDAV 自动直连**：访问以下目标时会自动绕过代理直连：
   - `localhost` 及环回地址（`127.0.0.0/8`、`::1`）
   - 私有与保留网段（`10.0.0.0/8`、`172.16.0.0/12`、`192.168.0.0/16`、`169.254.0.0/16`、`100.64.0.0/10` CGNAT/Tailscale、IPv6 ULA/Link-Local）
-  - 单标签主机名（如 Docker Compose 内部服务名 `alist`、`nextcloud`）
+  - 单标签主机名（如 Docker Compose 内部服务名 `openlist`、`nextcloud`）
   - `.local` / `.lan` / `.internal` / `.home.arpa` 域名及 `NO_PROXY` 列表
   - 当 `PROXY_BYPASS_RESOLVE=true`（默认）时，DNS 解析结果为上述内网 IP 的自定义域名同样自动直连。
 

@@ -6,7 +6,7 @@
 
 ## 1. 登录个人读取账号（`/login`）
 
-受 Telegram 官方平台限制，Bot 账号无法通过私密邀请链接加入群组，也无法读取非自身管理的私密频道或开启了「禁止转发（`noforwards`）」的会话。通过登录一个个人 Telegram 账号作为 **读取账号（Reader）**，系统即可读取该个人账号已加入的任意群组、频道或子话题。
+受 Telegram 官方平台机制限制，Bot 账号无法通过邀请链接加入群组，也无法直接拉取非自身管理频道的历史消息。通过登录个人 Telegram 账号作为 **读取账号（Reader）**，系统即可读取该账号已加入的任意群组、频道或子话题。
 
 ### 标准登录流程
 
@@ -107,14 +107,14 @@ TG Migrator 支持将消息投递至以下 Telegram 目的地：
 
 ## 4. 绑定 WebDAV 服务器（`/add_webdav`）
 
-WebDAV 目的地兼容 **AList**、**OpenList**、**Nextcloud**、**ownCloud**、**Synology WebDAV Server** 以及 **rclone serve webdav**。
+WebDAV 目的地兼容 **OpenList**、**Nextcloud**、**ownCloud**、**Synology WebDAV Server** 以及 **rclone serve webdav**。
 
 1. 进入 **`🎯 目的地`** → 点击 **`➕ WebDAV`**（或发送 `/add_webdav`）。
 2. 按向导提示依次输入配置参数：
-   - **目的地名称**：如 `alist_backup`
-   - **WebDAV 地址**：支持公网 `https://...` 以及内网/容器网络 `http://...`（如 `http://alist:5244/dav`）。
+   - **目的地名称**：如 `openlist_backup`
+   - **WebDAV 地址**：支持公网 `https://...` 以及内网/容器网络 `http://...`（如 `http://openlist:5244/dav`）。
      > [!NOTE] 内网地址自动绕过代理（LAN Bypass）
-     > 即使在 `.env` 中配置了全局 `PROXY_URL`，指向私有内网网段（`127.0.0.1`、`192.168.x.x`、`10.x.x.x`、`100.64.x.x` Tailscale/CGNAT）以及单标签容器服务名（如 `http://alist:5244`）的请求均会**自动直连，不经过代理服务器**。
+     > 即使在 `.env` 中配置了全局 `PROXY_URL`，指向私有内网网段（`127.0.0.1`、`192.168.x.x`、`10.x.x.x`、`100.64.x.x` Tailscale/CGNAT）以及单标签容器服务名（如 `http://openlist:5244`）的请求均会**自动直连，不经过代理服务器**。
    - **用户名**：WebDAV 账号用户名（匿名访问填 `-`）。
    - **密码**：WebDAV 账号密码（落库前自动使用 Fernet AES-128-CBC + HMAC-SHA256 加密存储；若密码包含 `_`、`*`、`~` 等符号，请使用反引号 `` `密码` `` 包裹发送）。
    - **服务器子目录**：如 `OneDrive/TG归档`（远端目录不存在时会自动通过 `MKCOL` 逐级创建）。

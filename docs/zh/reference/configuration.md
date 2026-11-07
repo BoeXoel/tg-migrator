@@ -77,7 +77,7 @@
 | `transfer.drop_caption` | `false` | 搬运媒体时是否剥离附带的文字说明（Caption） |
 | `transfer.strip_spoilers` | `true` | 自动剥离图片/视频/文字上的防剧透遮罩（含遮罩时会自动走重传剥离） |
 | `transfer.native_copy` | `true` | 当读取号同时作为写入号且无需剥离剧透时，优先尝试零流量服务端原生复制 |
-| `transfer.native_only` | `false` | 仅允许原生复制（遇到禁止转发频道直接跳过而不下载重传） |
+| `transfer.native_only` | `false` | 仅使用服务端原生复制（不支持原生复制时直接跳过而不下载重传） |
 | `transfer.allow_premium_user_fallback` | `false` | 当 Bot 遇到 2GB~4GB 超大文件时，允许自动切换为已登录的 Premium 个人号上传 |
 | `transfer.allow_download_unknown_size` | `false` | 是否允许下载未预先标明文件大小的媒体 |
 | `transfer.caption_overflow` | `split` | 超长说明文字处理方式：`split`（超出部分拆分为紧随其后的纯文本消息）或 `truncate`（截断） |

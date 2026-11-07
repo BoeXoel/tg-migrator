@@ -4,7 +4,7 @@ layout: home
 hero:
   name: "TG Migrator"
   text: "Bot-Controlled Telegram Migration & Archiving"
-  tagline: "Copy, stream, and continuously watch restricted or public Telegram chats to Telegram Topics, Local NAS, and WebDAV — 100% controlled via an interactive Telegram Bot."
+  tagline: "Synchronize, stream, and continuously archive Telegram groups, channels, and Forum Topics to Telegram, Local NAS, and WebDAV — 100% controlled via an interactive Telegram Bot."
   image:
     src: /logo.png
     alt: TG Migrator
@@ -25,10 +25,10 @@ features:
     details: Authenticate a personal reader account via an inline keypad (/login), bind groups or Forum sub-topics (/bind), launch batch migrations, and tune rate limits directly inside Telegram.
   - icon: 🗂️
     title: Multi-Sink Destinations
-    details: Deliver to Telegram Groups/Channels (with Forum Topic targeting & Album grouping), Local NAS directories (with JSON/Markdown sidecars), or WebDAV servers (AList, OpenList, Nextcloud).
+    details: Deliver to Telegram Groups/Channels (with Forum Topic targeting & Album grouping), Local NAS directories (with JSON/Markdown sidecars), or WebDAV servers (OpenList, Nextcloud).
   - icon: 🛡️
-    title: Restricted Content & Spoiler Handling
-    details: Automatically falls back from native server-side copy to local stream re-upload when forwarding is restricted (noforwards), preserving video dimensions, durations, thumbnails, and stripping spoilers.
+    title: Dual-Engine Transfer & Media Fidelity
+    details: Intelligently combines zero-bandwidth native server-side copy with local stream re-upload, preserving video dimensions, durations, thumbnails, audio waveforms, and stripping spoiler masks.
   - icon: 📡
     title: Continuous Hybrid Watch
     details: Real-time MTProto event listener combined with periodic watermark polling (last_seen_msg_id) and keyword/regex filtering ensures zero missed messages across restarts.

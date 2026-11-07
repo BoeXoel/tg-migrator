@@ -3,7 +3,7 @@
 **English** | [简体中文](docs/README.zh-CN.md) | [Docs](https://tg-migrator.isgay.top/) | [Docker](https://hub.docker.com/r/boexoel/tg-migrator)
 
 > **Self-Hosted Telegram Media Archiver & Multi-Sink Message Router Controlled via Telegram Bot**
-> Synchronize and archive messages from Telegram groups, channels, or Forum Topics that you have legitimate access to into **other Telegram chats**, **local NAS directories**, or **WebDAV storage (Alist / Nextcloud / etc.)** — supporting both one-off historical migrations and 24/7 real-time watch routing.
+> Synchronize and archive messages from Telegram groups, channels, or Forum Topics that you have legitimate access to into **other Telegram chats**, **local NAS directories**, or **WebDAV storage (OpenList / Nextcloud / etc.)** — supporting both one-off historical migrations and 24/7 real-time watch routing.
 
 ---
 
@@ -13,7 +13,7 @@
 - **Multi-Sink Destinations**:
   - `telegram`: Supports target groups, channels, and Forum Topics. Uses zero-download **Native Copy** whenever possible; automatically falls back to **local stream re-upload** when cross-chat native copy is unavailable or when stripping spoiler masks, preserving video dimensions/duration, audio tags, voice waveforms, original filenames, safe thumbnails, and full Album grouping.
   - `local`: Structured archiving into mounted container directories (strictly confined within `ARCHIVE_ROOT` to prevent path traversal).
-  - `webdav`: Supports both public HTTPS and internal HTTP endpoints (e.g., `http://alist:5244/dav`), offering both **local disk spooling (`spool`)** and **zero-disk streaming (`stream`)** modes.
+  - `webdav`: Supports both public HTTPS and internal HTTP endpoints (e.g., `http://openlist:5244/dav`), offering both **local disk spooling (`spool`)** and **zero-disk streaming (`stream`)** modes.
 - **Continuous Watch & Multi-Destination Routing**: Configure persistent routes mapping a single source (optionally scoped to a specific Forum Topic) to one or multiple destinations. Combines real-time event listening (with automatic Album aggregation) and periodic watermark (`last_seen_msg_id`) polling to automatically catch up on missed messages after restarts.
 - **Comprehensive Media & Message Coverage**: Plain text, photos, videos, GIFs, audio tracks, voice notes, circular video notes, general documents, and stickers; polls and locations are supported via native copy.
 - **Smart Oversized File Handling**: Automatically detects upload limits for standard accounts/Bots (`2000 MiB`) and Telegram Premium (`4000 MiB`). Supports optional fallback to a logged-in Premium reader account for `2–4 GiB` files, or automatic offloading of oversized files to a linked Local / WebDAV fallback destination.
@@ -178,7 +178,7 @@ PROXY_BYPASS_RESOLVE=true
 - **Automatic Internal WebDAV Bypass**: The following WebDAV targets automatically bypass the proxy and connect directly:
   - `localhost` and loopback addresses (`127.0.0.0/8`, `::1`)
   - Private & reserved ranges (`10.0.0.0/8`, `172.16.0.0/12`, `192.168.0.0/16`, `169.254.0.0/16`, `100.64.0.0/10` CGNAT/Tailscale, IPv6 ULA/Link-Local)
-  - Single-label hostnames (e.g., Docker Compose service names like `alist`, `nextcloud`)
+  - Single-label hostnames (e.g., Docker Compose service names like `openlist`, `nextcloud`)
   - `.local`, `.lan`, `.internal`, `.home.arpa` domains, and entries in `NO_PROXY`
   - Custom domains resolving to any of the private IPs above when `PROXY_BYPASS_RESOLVE=true` (default).
 

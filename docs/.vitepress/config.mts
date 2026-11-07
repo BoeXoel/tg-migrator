@@ -149,7 +149,7 @@ export default defineConfig({
           text: '最后更新于',
         },
         footer: {
-          message: '基于 AGPL-3.0 协议开源发布。',
+          message: '基于 AGPL-3.0 协议开源发布',
           copyright: `Copyright © ${currentYear} BoeXoel`,
         },
       },

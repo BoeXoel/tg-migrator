@@ -91,7 +91,7 @@ def test_local_target_writes_files_and_sidecar(tmp_path):
 
 
 def test_webdav_url_rules():
-    assert validate_webdav_url("http://alist:5244/dav/") == "http://alist:5244/dav"
+    assert validate_webdav_url("http://openlist:5244/dav/") == "http://openlist:5244/dav"
     with pytest.raises(TargetConfigError):
         validate_webdav_url("ftp://x/dav")
     with pytest.raises(TargetConfigError):
@@ -117,7 +117,7 @@ def test_webdav_target_uploads(tmp_path, mode):
     handler = WebDAVTarget(boot, FakeClients(boot), limiter_for(settings))
     requests: list = []
     handler.transport = _recording_transport(requests)
-    config = {"url": "http://alist:5244/dav", "username": "u", "password": "p", "base_path": "tg"}
+    config = {"url": "http://openlist:5244/dav", "username": "u", "password": "p", "base_path": "tg"}
     target = Target(id=2, name="dav", type="webdav", enabled=True, config=config)
     result = asyncio.run(handler.deliver(context(make_job(), target, config, [video(size=10)], settings)))
 

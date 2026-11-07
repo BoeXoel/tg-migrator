@@ -6,7 +6,7 @@ This guide covers authenticating a personal Reader account (`/login`), binding T
 
 ## 1. Reader Account Authentication (`/login`)
 
-Due to Telegram platform restrictions, Bot accounts cannot join private groups via invite links or read messages from non-admin private channels and chats that restrict forwarding (`noforwards`). Authenticating a personal **Reader Account** enables TG Migrator to read any chat, channel, or topic accessible to that user account.
+Due to Telegram platform limitations, Bot accounts cannot join groups via invite links or pull historical messages from non-admin channels. Authenticating a personal **Reader Account** enables TG Migrator to read any chat, channel, or topic accessible to that user account.
 
 ### Standard Authentication Flow
 
@@ -106,14 +106,14 @@ Change the format at runtime via `/set archive.sidecar_format md`.
 
 ## 4. WebDAV Destinations (`/add_webdav`)
 
-WebDAV destinations are compatible with **AList**, **OpenList**, **Nextcloud**, **ownCloud**, **Synology WebDAV Server**, and **rclone serve webdav**.
+WebDAV destinations are compatible with **OpenList**, **Nextcloud**, **ownCloud**, **Synology WebDAV Server**, and **rclone serve webdav**.
 
 1. Open **`🎯 Targets`** → tap **`➕ WebDAV`** (or send `/add_webdav`).
 2. Complete the interactive wizard prompts:
-   - **Target name**: e.g. `alist_onedrive`
-   - **WebDAV URL**: Supports external `https://...` as well as internal Docker/LAN `http://...` endpoints (e.g. `http://alist:5244/dav`).
+   - **Target name**: e.g. `openlist_onedrive`
+   - **WebDAV URL**: Supports external `https://...` as well as internal Docker/LAN `http://...` endpoints (e.g. `http://openlist:5244/dav`).
      > [!NOTE] Automatic LAN Proxy Bypass
-     > Even when a global `PROXY_URL` is configured, private network addresses (`localhost`, `192.168.x.x`, `10.x.x.x`, `100.64.x.x` Tailscale/CGNAT, and single-label Docker service hostnames such as `http://alist:5244`) **automatically bypass the proxy** and connect directly.
+     > Even when a global `PROXY_URL` is configured, private network addresses (`localhost`, `192.168.x.x`, `10.x.x.x`, `100.64.x.x` Tailscale/CGNAT, and single-label Docker service hostnames such as `http://openlist:5244`) **automatically bypass the proxy** and connect directly.
    - **Username**: WebDAV username (or `-` for anonymous access).
    - **Password**: WebDAV password (encrypted at rest using Fernet AES-128-CBC + HMAC-SHA256). Wrap in single backticks `` `password` `` if it contains `_`, `*`, or `~`.
    - **Subdirectory**: e.g. `OneDrive/TelegramArchive` (created automatically via `MKCOL` if absent).

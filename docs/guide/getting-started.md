@@ -11,7 +11,7 @@ TG Migrator is built around 4 core components:
 | Concept | Role in TG Migrator | Required? |
 | :--- | :--- | :--- |
 | **🤖 Bot Account** (`BOT_TOKEN`) | Hosts the interactive control panel (`/start`) **and** serves as the default **Writer** when delivering messages to destination Telegram chats. | **Yes** |
-| **👤 Reader Account** (`/login`) | A personal Telegram user account authenticated via `/login`. Used to **read** restricted (`noforwards`) or private groups/channels where a Bot cannot join or read history. | **Recommended** (Optional only for public channels) |
+| **👤 Reader Account** (`/login`) | A personal Telegram user account authenticated via `/login`. Used to **read** joined groups, channels, or Forum Topics where a Bot cannot join via invite link or pull history directly. | **Recommended** (Optional only for public channels) |
 | **🎯 Target (Destination)** | Where migrated content is stored: a **Telegram chat/Topic**, a **Local NAS directory**, or a **WebDAV server**. Multiple targets can be configured simultaneously. | **Yes** (At least 1) |
 | **📋 Task vs 📡 Watch Route** | A **Task** executes a one-off migration (a single message link, an ID range such as `100-500`, or a full history scan). A **Watch Route** continuously monitors a source chat and forwards new messages automatically. | Either or both |
 

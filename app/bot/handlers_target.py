@@ -289,8 +289,8 @@ def _webdav_wizard(ctx: AppContext) -> Wizard:
                 "url",
                 tr(
                     lang,
-                    "WebDAV URL (supports https:// and internal http://, e.g. <code>http://alist:5244/dav</code>):",
-                    "WebDAV 地址（支持 https:// 与内网 http://，如 <code>http://alist:5244/dav</code>）：",
+                    "WebDAV URL (supports https:// and internal http://, e.g. <code>http://openlist:5244/dav</code>):",
+                    "WebDAV 地址（支持 https:// 与内网 http://，如 <code>http://openlist:5244/dav</code>）：",
                 ),
                 parse_url,
             ),
