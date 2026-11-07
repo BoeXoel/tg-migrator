@@ -1,0 +1,18 @@
+<svg xmlns="http://www.w3.org/2000/svg" viewBox="0 0 128 128" fill="none">
+  <defs>
+    <linearGradient id="bg" x1="0" y1="0" x2="128" y2="128" gradientUnits="userSpaceOnUse">
+      <stop offset="0%" stop-color="#2AABEE"/>
+      <stop offset="100%" stop-color="#1A6DFF"/>
+    </linearGradient>
+    <linearGradient id="portal" x1="24" y1="74" x2="104" y2="108" gradientUnits="userSpaceOnUse">
+      <stop offset="0%" stop-color="#FFFFFF" stop-opacity="0.35"/>
+      <stop offset="100%" stop-color="#80E5FF" stop-opacity="0.15"/>
+    </linearGradient>
+  </defs>
+  <rect width="128" height="128" rx="28" fill="url(#bg)"/>
+  <!-- Archive Tray / Cloud Portal Base -->
+  <path d="M26 82C26 76.4772 30.4772 72 36 72H92C97.5228 72 102 76.4772 102 82V92C102 98.6274 96.6274 104 90 104H38C31.3726 104 26 98.6274 26 92V82Z" fill="url(#portal)" stroke="#FFFFFF" stroke-opacity="0.45" stroke-width="3"/>
+  <path d="M48 86H80" stroke="#FFFFFF" stroke-opacity="0.85" stroke-width="4" stroke-linecap="round"/>
+  <!-- Origami Paper Plane -->
+  <path d="M97.4 26.8L25.6 54.5C20.7 56.4 20.8 61.1 24.8 62.3L43.2 68.1L85.8 41.2C87.8 39.9 89.7 40.6 88.2 42.0L53.7 73.2L52.4 91.8C54.2 91.8 55.0 91.0 56.0 90.0L64.8 81.5L83.1 95.0C86.5 96.9 88.9 95.9 89.8 91.8L101.9 34.6C103.1 29.6 100.0 25.6 97.4 26.8Z" fill="#FFFFFF"/>
+</svg>

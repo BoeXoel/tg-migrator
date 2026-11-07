@@ -1,14 +1,14 @@
 # 常见报错与排坑 FAQ
 
-本页汇总了实际部署与日常使用中最容易遇到的报错及一键解决方法。
+本页汇总了部署与运行过程中常见的故障现象、触发原因及标准排查方案。
 
 ---
 
 ## 1. 容器启动与环境报错
 
 ### 报错一：`PermissionError: [Errno 13] Permission denied: '/app/downloads/active'`
-- **原因**：直接运行 `docker compose up -d` 时，Docker 守护进程会自动以 `root:root` 身份在宿主机创建 `data`、`sessions`、`downloads`、`archive` 四个挂载目录；而容器内部为了安全以非特权用户 `migrator (1000:1000)` 运行，导致无权写入。
-- **解决方法**：在宿主机部署目录下执行以下命令修改属主并重启即可：
+- **触发原因**：首次直接执行 `docker compose up -d` 时，若宿主机尚不存在挂载目录，Docker 守护进程会自动以 `root:root` 属主创建 `data`、`sessions`、`downloads`、`archive` 四个目录；而容器内部默认以非特权用户 `migrator (1000:1000)` 运行，从而因缺少写权限而启动失败。
+- **解决方案**：在宿主机部署目录下修正挂载目录属主并重启容器：
   ```bash
   sudo chown -R 1000:1000 data sessions downloads archive
   docker compose restart tg-migrator
@@ -16,51 +16,51 @@
 
 ---
 
-### 报错二：`socket.gaierror: [Errno -3] Temporary failure in name resolution`（连不上 `postgres` 或 `mysql`）
-- **原因**：你在 `.env` 中取消注释并填写了 `DATABASE_URL=postgresql+asyncpg://...@postgres:5432/...`，但启动时执行的是普通的 `docker compose up -d`（未开启 `--profile postgres`），导致容器网络内根本不存在名为 `postgres` 的数据库容器。
-- **解决方法**：
-  - **如果你想用默认的 SQLite（最简单，推荐）**：编辑 `.env`，将 `DATABASE_URL=` **等号后面完全留空**，然后重新执行 `docker compose up -d`。
-  - **如果你确实想用 PostgreSQL**：启动时请加上 Profile 参数：`docker compose --profile postgres up -d`。
+### 报错二：`socket.gaierror: [Errno -3] Temporary failure in name resolution`（无法解析 `postgres` 或 `mysql`）
+- **触发原因**：`.env` 配置文件中启用了指向内部容器名（如 `@postgres:5432` 或 `@mysql:3306`）的 `DATABASE_URL`，但启动服务时仅执行了默认的 `docker compose up -d`（未指定 `--profile postgres` 或 `--profile mysql`），导致 Docker 网络内未启动对应的数据库容器。
+- **解决方案**：
+  - **使用内置 SQLite 数据库（默认推荐）**：编辑 `.env`，将 `DATABASE_URL=` 置空（等号右侧不填任何内容），随后执行 `docker compose up -d`。
+  - **使用外部容器数据库（PostgreSQL / MySQL）**：启动时显式指定对应的 Compose Profile，例如 `docker compose --profile postgres up -d`。
 
 ---
 
 ### 报错三：`required variable MYSQL_PASSWORD / POSTGRES_PASSWORD is missing a value`
-- **原因**：早期 `v0.0.1` 版本的 `docker-compose.yml` 使用了 `:?` 强校验语法，即使未启用外部数据库也会检查密码变量。
-- **解决方法**：更新到 `v0.0.2+` 版本的 `docker-compose.yml`（已改为 `:-` 兼容语法）。
+- **触发原因**：`v0.0.1` 版本的 `docker-compose.yml` 对数据库密码变量采用了 `:?` 强制非空校验，导致即使未启用数据库 Profile 也会触发环境变量检查。
+- **解决方案**：更新至 `v0.0.2` 及以上版本的 `docker-compose.yml`（已改为 `:-` 缺省兼容语法）。
 
 ---
 
 ## 2. Bot 操作与搬运常见问题
 
-### 问题一：为什么在开启了话题的群里发 `/bind`，却只绑定了主话题（General）？
-- **原因**：`/bind` 的绑定逻辑是 **“在哪个话题里发送指令，就绑定哪个话题”**。如果你停留在 `# General` 主话题里发送 `/bind`，消息不含子话题标识，就会绑定为主话题。
-- **解决方法**：
-  1. 在目标群组中，**先点击进入你想作为目的地的那个子 Topic（子话题）聊天界面**；
-  2. 在该子 Topic 内部发送 `/bind`，即可生成带 `_t话题ID` 的独立子话题目的地；
-  3. 或者在私聊 Bot 时直接发送 `/add_tg -100群组ID 话题ID`。
+### 问题一：在开启了话题（Topics）的群组中发送 `/bind`，为何仅绑定了主话题（General）？
+- **触发原因**：`/bind` 指令根据消息所在的当前话题上下文确定绑定目标。若在 `# General` 主话题中发送 `/bind`，消息不包含子话题 `topic_id`，系统默认将其绑定为群组主话题。
+- **解决方案**：
+  1. 在目标群组中，**先进入需要作为目的地的具体子 Topic（子话题）聊天视图**；
+  2. 在该子 Topic 的消息输入框中发送 `/bind`，系统即会创建带 `_t<话题ID>` 标识的子话题目的地；
+  3. 也可在与 Bot 的私聊窗口中直接执行 `/add_tg -100<群组ID> <话题ID>` 手动绑定。
 
 ---
 
-### 问题二：为什么图片和视频都搬运成功了，但 `.zip`、`.pdf`、`.apk` 等文件被跳过了？
-- **原因**：为了避免在纯影视/图集频道里误搬运无关附件，默认配置中 `transfer.include.document`（通用文档/压缩包）是**关闭（`false`）**的。
-- **解决方法**：在 Bot 私聊中开启文档搬运开关即可：
+### 问题二：图片与视频正常搬运，为何 `.zip`、`.pdf`、`.apk` 等文件附件被跳过？
+- **触发原因**：为防止在纯影音/图集场景下误搬运无关附件，系统默认将通用文档类型开关 `transfer.include.document` 设为 `false`。
+- **解决方案**：在与 Bot 的私聊窗口中开启通用文档传输：
   ```text
   /set transfer.include.document true
   ```
-  *（或者点击 **`⚙️ 设置` → `📦 媒体类型` → `📄 文档/文件`** 将其点亮为 `✅`。）*
+  *（或通过交互面板依次点击 **`⚙️ 设置` → `📦 媒体类型` → `📄 文档/文件`** 将其切换为 `✅`。）*
 
 ---
 
-### 问题三：输入 WebDAV 密码或两步验证（2FA）密码时提示密码错误？
-- **原因**：如果你的密码中包含成对的 `_`、`*`、`~` 或 `||`，Telegram 客户端在发送消息时会自动把它们解析成*斜体*、**粗体**、~~删除线~~或剧透格式，从而把这些特殊符号本身吞掉。
-- **解决方法**：发送密码时，在密码首尾加上英文单反引号（变成行内代码格式）发送：
+### 问题三：输入含特殊字符的 WebDAV 密码或两步验证（2FA）密码时，为何提示密码错误？
+- **触发原因**：当密码字符串中包含成对的 `_`、`*`、`~` 或 `||` 时，Telegram 客户端在发送消息时会自动将其解析为*斜体*、**粗体**、~~删除线~~或剧透富文本格式，并剥离原始符号，导致服务端收到的字符不完整。
+- **解决方案**：发送包含特殊字符的密码时，使用英文单反引号（行内代码格式）将其包裹：
   ```text
   `your_password*with_symbols`
   ```
-  Bot 会自动剥离首尾的反引号，并原封不动地读取里面的所有特殊字符。
+  系统会自动剥离首尾的单反引号，并原样提取内部的全部原始字符。
 
 ---
 
-### 问题四：为什么我在私聊里给 Bot 发 `/start` 没有任何反应？
-- **原因**：TG Migrator 启用了严格的 `ADMIN_IDS` 管理员白名单机制，非白名单用户的私聊消息会被完全静默丢弃。
-- **解决方法**：在 Telegram 私聊 [@userinfobot](https://t.me/userinfobot) 确认你的纯数字 User ID，填入 `.env` 的 `ADMIN_IDS=` 中，然后执行 `docker compose up -d` 重载配置。
+### 问题四：在私聊窗口向 Bot 发送 `/start` 为何无任何响应？
+- **触发原因**：系统启用了严格的 `ADMIN_IDS` 管理员白名单鉴权机制，非白名单 User ID 发送的私聊指令会被静默丢弃。
+- **解决方案**：通过 [@userinfobot](https://t.me/userinfobot) 查询当前账号的纯数字 User ID，将其填入 `.env` 的 `ADMIN_IDS=` 配置项后执行 `docker compose up -d` 重载容器。

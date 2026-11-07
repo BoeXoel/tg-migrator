@@ -1,42 +1,42 @@
 # Getting Started & Deployment
 
-This guide walks you through understanding TG Migrator's core concepts, preparing your Telegram credentials, deploying the service with Docker Compose, and completing your first message migration in 5 minutes.
+This guide covers TG Migrator's core architectural concepts, credential prerequisites, standard Docker Compose deployment, and initial migration workflow.
 
 ---
 
-## 1. Core Concepts in 60 Seconds
+## 1. Core Architectural Concepts
 
-Before deploying, understanding the 4 building blocks makes everything intuitive:
+TG Migrator is built around 4 core components:
 
 | Concept | Role in TG Migrator | Required? |
 | :--- | :--- | :--- |
-| **🤖 Bot Account** (`BOT_TOKEN`) | Runs the interactive control panel (`/start`) **and** acts as the default **Writer** when sending messages to your target Telegram chats. | **Yes** |
-| **👤 Reader Account** (`/login`) | Your personal Telegram user account. Used to **read** restricted/private groups & channels that forbid forwarding or where the Bot is not a member. | **Recommended** (Optional only for public channels) |
-| **🎯 Target (Destination)** | Where migrated content is stored: a **Telegram chat/Topic**, a **Local NAS directory**, or a **WebDAV server**. You can create multiple targets. | **Yes** (At least 1) |
-| **📋 Task vs 📡 Watch Route** | A **Task** is a one-off migration (a single message link, an ID range like `100-500`, or a full history scan). A **Watch Route** continuously monitors a source chat and forwards new messages automatically. | Use either or both |
+| **🤖 Bot Account** (`BOT_TOKEN`) | Hosts the interactive control panel (`/start`) **and** serves as the default **Writer** when delivering messages to destination Telegram chats. | **Yes** |
+| **👤 Reader Account** (`/login`) | A personal Telegram user account authenticated via `/login`. Used to **read** restricted (`noforwards`) or private groups/channels where a Bot cannot join or read history. | **Recommended** (Optional only for public channels) |
+| **🎯 Target (Destination)** | Where migrated content is stored: a **Telegram chat/Topic**, a **Local NAS directory**, or a **WebDAV server**. Multiple targets can be configured simultaneously. | **Yes** (At least 1) |
+| **📋 Task vs 📡 Watch Route** | A **Task** executes a one-off migration (a single message link, an ID range such as `100-500`, or a full history scan). A **Watch Route** continuously monitors a source chat and forwards new messages automatically. | Either or both |
 
 ---
 
 ## 2. Prerequisites (4 Credentials)
 
-Prepare the following 4 values before editing `.env`:
+Prepare the following 4 values before configuring `.env`:
 
 1. **`API_ID` & `API_HASH`**
-   Log in to [my.telegram.org](https://my.telegram.org) with your phone number → open **API development tools** → create an app to obtain your numeric `api_id` and 32-character `api_hash`.
+   Sign in to [my.telegram.org](https://my.telegram.org) → open **API development tools** → create an application to obtain the numeric `api_id` and 32-character `api_hash`.
 2. **`BOT_TOKEN`**
    Message [@BotFather](https://t.me/BotFather) on Telegram → send `/newbot` → copy the HTTP API token (format: `123456789:AAH...`).
 3. **`ADMIN_IDS`**
-   Message [@userinfobot](https://t.me/userinfobot) on Telegram to get your numeric Telegram User ID (e.g. `123456789`).
-   > [!IMPORTANT]
-   > Only user IDs listed in `ADMIN_IDS` can interact with your Bot in private chat. The Bot silently ignores everyone else.
+   Message [@userinfobot](https://t.me/userinfobot) on Telegram to obtain the administrator's numeric Telegram User ID (e.g. `123456789`).
+   > [!IMPORTANT] Admin Allowlist
+   > Only Telegram User IDs listed in `ADMIN_IDS` are authorized to interact with the Bot in private chat. Requests from unlisted accounts are silently ignored. Multiple IDs can be separated by commas.
 
 ---
 
 ## 3. Docker Compose Deployment
 
-### Step 1: Download Deployment Files & Create Directories
+### Step 1: Download Deployment Files & Initialize Directory Permissions
 
-Create a working directory on your server or NAS, download `docker-compose.yml` and `.env.example`, and pre-create the mounted directories with UID/GID `1000:1000` (the non-root user inside the container):
+Create a deployment directory on the host or NAS, download `docker-compose.yml` and `.env.example`, and pre-create the bind-mounted directories with UID/GID `1000:1000` (matching the non-privileged container user):
 
 ```bash
 mkdir -p tg-migrator && cd tg-migrator
@@ -50,12 +50,12 @@ sudo chown -R 1000:1000 data sessions downloads archive
 chmod 700 data sessions
 ```
 
-> [!WARNING] Why `chown -R 1000:1000` matters
-> For security, the container runs as non-root user `migrator (1000:1000)`. If Docker automatically creates the host directories as `root:root`, the container will fail on startup with `PermissionError: [Errno 13] Permission denied: '/app/downloads/active'`. Running the `chown` command above prevents this completely.
+> [!WARNING] Host Directory Ownership (`1000:1000`)
+> The container runs as non-privileged user `migrator (1000:1000)`. If the Docker daemon creates missing host directories automatically, they are owned by `root:root`, causing startup to fail with `PermissionError: [Errno 13] Permission denied: '/app/downloads/active'`. Pre-creating the directories and running `chown -R 1000:1000` prevents this issue.
 
 ### Step 2: Configure `.env`
 
-Open `.env` and fill in your 4 required credentials:
+Open `.env` and populate the 4 required credentials:
 
 ```ini
 API_ID=12345678
@@ -64,13 +64,13 @@ BOT_TOKEN=123456789:AAHxxxxxxxxxxxxxxxxxxxxxxxxxxxx
 ADMIN_IDS=123456789
 
 # Default Bot UI language: en (English) or zh (Simplified Chinese)
-# Can also be switched anytime inside the Bot via /lang
+# Can also be switched at runtime via /lang
 BOT_LANG=en
 ```
 
-::: tip Choosing a Database (SQLite by Default)
-- **SQLite (Default, Recommended for single-node deployments)**: Leave `DATABASE_URL=` **completely empty** in `.env`. Data is stored automatically in `./data/migrator.db`.
-- **PostgreSQL / MySQL**: Only uncomment `DATABASE_URL` if you start the corresponding database container profile (`docker compose --profile postgres up -d`). If you set `DATABASE_URL=postgresql+asyncpg://...@postgres:5432/...` without starting the `postgres` profile, startup will fail with `Temporary failure in name resolution`.
+::: tip Database Backend Selection (Built-in SQLite by Default)
+- **SQLite (Default, Recommended for single-node / NAS deployments)**: Leave `DATABASE_URL=` **empty** in `.env`. Data is persisted automatically in `./data/migrator.db`.
+- **PostgreSQL / MySQL**: Only configure `DATABASE_URL` when starting the corresponding database container profile (`docker compose --profile postgres up -d`) or connecting to an external database server. Setting `DATABASE_URL` to `@postgres:5432` without enabling the `postgres` profile will result in `socket.gaierror: Temporary failure in name resolution`.
 :::
 
 ### Step 3: Start the Service
@@ -80,33 +80,33 @@ docker compose up -d
 docker compose logs -f tg-migrator
 ```
 
-When you see `TG Migrator 0.0.2 starting`, your Bot is online and will send a startup notification to your Telegram account!
+Once `TG Migrator 0.0.3 starting` appears in the logs, the Bot is online and sends a startup notification to the configured administrator chat.
 
 ---
 
-## 4. First-Run 5-Minute Walkthrough
+## 4. Initial 5-Minute Workflow
 
-Open a private chat with your Bot in Telegram and follow these 4 steps:
+Open a private chat with the Bot in Telegram and complete the following 4 steps:
 
 1. **Open the Control Panel (`/start`)**
-   Send `/start` to bring up the main menu. To switch between English and Chinese at any time, tap **`🌐 Language`** or send `/lang zh` / `/lang en`.
-2. **Log In Your Reader Account (`/login`)**
-   Tap **`🔑 Account`** (or send `/login`) → enter your phone number in international format (e.g. `+12025550123`) → enter the login code using the **on-screen inline keypad** (never type the code as plain text, or Telegram will revoke it!).
+   Send `/start` to display the main menu. To switch between English and Simplified Chinese at any time, tap **`🌐 Language`** or send `/lang zh` / `/lang en`.
+2. **Authenticate the Reader Account (`/login`)**
+   Tap **`🔑 Account`** (or send `/login`) → enter the phone number in international format (e.g. `+12025550123`) → input the 5-digit verification code using the **on-screen inline keypad** (never send the login code as a plain text chat message, or Telegram will immediately invalidate it).
 3. **Bind a Destination (`/bind`)**
-   Add your Bot to your target Telegram group/channel (grant it permission to post messages), then send `/bind` inside that group (or inside a specific **Forum Sub-Topic**).
-4. **Run Your First Migration**
-   Forward any message from a source chat to the Bot, or send a Telegram message link like `https://t.me/c/123456789/42`. Select your target and watch the progress live!
+   Add the Bot to the destination Telegram group or channel (with permission to post messages), then send `/bind` inside that group (or inside a specific **Forum Sub-Topic**).
+4. **Launch a Migration Task**
+   Forward a message from a source chat to the Bot, or send a Telegram message link such as `https://t.me/c/123456789/42`. Select one or more destinations on the prompt card and tap **`🚀 Start`**.
 
 ---
 
 ## 5. Smooth Upgrades
 
-Upgrading to a newer release is completely non-destructive:
+Upgrading to a newer image release preserves all existing state:
 
 ```bash
 docker compose pull
 docker compose up -d
 ```
 
-- **100% Data & Session Preservation**: Your database (`data/migrator.db`), encryption key (`data/secret.key`), logged-in Telegram session (`sessions/`), targets, and watch routes are all preserved in place.
-- **Automatic In-Progress Recovery**: Any transfer job that was interrupted mid-flight during container restart is automatically reset to `pending` and resumed cleanly on startup.
+- **Full State Preservation**: The database (`data/migrator.db`), master encryption key (`data/secret.key`), authenticated Telegram sessions (`sessions/`), targets, and watch routes remain intact across upgrades.
+- **Automatic Interrupted-Job Recovery**: Any transfer job that was `in_progress` when the container restarted is automatically reset to `pending` and resumed upon startup.

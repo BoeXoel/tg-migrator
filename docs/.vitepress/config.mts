@@ -1,5 +1,7 @@
 import { defineConfig } from 'vitepress'
 
+const currentYear = new Date().getFullYear()
+
 export default defineConfig({
   title: 'TG Migrator',
   base: '/',
@@ -8,10 +10,34 @@ export default defineConfig({
   srcExclude: ['README.zh-CN.md'],
 
   head: [
+    ['link', { rel: 'icon', type: 'image/svg+xml', href: '/favicon.svg' }],
+    ['link', { rel: 'icon', type: 'image/png', href: '/logo.png' }],
+    ['link', { rel: 'apple-touch-icon', href: '/logo.png' }],
     ['meta', { name: 'theme-color', content: '#2481cc' }],
+    [
+      'script',
+      {},
+      `(() => {
+        const updateYear = () => {
+          const year = String(new Date().getFullYear());
+          document.querySelectorAll('.VPFooter .copyright').forEach((el) => {
+            if (el.textContent) {
+              el.textContent = el.textContent.replace(/©\\s*\\d{4}/, '© ' + year);
+            }
+          });
+        };
+        if (typeof window !== 'undefined') {
+          window.addEventListener('DOMContentLoaded', () => {
+            updateYear();
+            new MutationObserver(updateYear).observe(document.body, { childList: true, subtree: true });
+          });
+        }
+      })();`,
+    ],
   ],
 
   themeConfig: {
+    logo: '/logo.png',
     search: {
       provider: 'local',
       options: {
@@ -77,7 +103,7 @@ export default defineConfig({
         },
         footer: {
           message: 'Released under the AGPL-3.0 License.',
-          copyright: 'Copyright © 2026 BoeXoel',
+          copyright: `Copyright © ${currentYear} BoeXoel`,
         },
       },
     },
@@ -124,7 +150,7 @@ export default defineConfig({
         },
         footer: {
           message: '基于 AGPL-3.0 协议开源发布。',
-          copyright: 'Copyright © 2026 BoeXoel',
+          copyright: `Copyright © ${currentYear} BoeXoel`,
         },
       },
     },

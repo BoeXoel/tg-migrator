@@ -1,6 +1,6 @@
 # Commands & Settings Reference
 
-This page is your complete lookup dictionary for all Telegram Bot commands, `.env` bootstrap environment variables, and runtime settings editable via `/set`.
+This page provides a complete reference for all Telegram Bot commands, `.env` bootstrap environment variables, and runtime settings editable via `/set`.
 
 ---
 

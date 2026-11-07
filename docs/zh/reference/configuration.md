@@ -88,7 +88,7 @@
 | `transfer.include.audio` | `true` | 是否搬运音乐/音频 |
 | `transfer.include.voice` | `true` | 是否搬运语音消息 |
 | `transfer.include.video_note` | `true` | 是否搬运圆形视频消息 |
-| `transfer.include.document` | `false` | **注意默认关闭**：是否搬运通用文件/压缩包（如 `.zip`、`.pdf`、`.apk` 等，需要搬运文件时请设为 `true`！） |
+| `transfer.include.document` | `false` | **默认关闭**：是否搬运通用文件/压缩包（如 `.zip`、`.pdf`、`.apk` 等，需搬运此类文件时应设为 `true`） |
 | `transfer.include.sticker` | `false` | 是否搬运贴纸 |
 | `transfer.include.other` | `false` | 是否搬运仅支持原生复制的特殊类型（投票、名片、位置等） |
 
