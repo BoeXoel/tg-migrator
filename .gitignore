@@ -47,3 +47,11 @@ Thumbs.db
 .vscode/
 *.swp
 *.swo
+
+# Docs (VitePress & Cloudflare Wrangler)
+node_modules/
+docs/node_modules/
+docs/.vitepress/dist/
+docs/.vitepress/cache/
+.wrangler/
+docs/.wrangler/

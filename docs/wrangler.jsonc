@@ -1,0 +1,13 @@
+{
+  // Cloudflare Workers Static Assets configuration for TG Migrator Docs.
+  // Pure static asset hosting: 0 Worker script invocations, unlimited free requests.
+  // Custom domain is bound directly in the Cloudflare Dashboard (Workers & Pages -> tg-migrator-docs -> Settings -> Domains & Routes).
+  "$schema": "node_modules/wrangler/config-schema.json",
+  "name": "tg-migrator-docs",
+  "compatibility_date": "2026-11-01",
+  "workers_dev": false,
+  "assets": {
+    "directory": "./.vitepress/dist",
+    "not_found_handling": "404-page"
+  }
+}
