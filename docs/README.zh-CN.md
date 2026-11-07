@@ -1,6 +1,6 @@
 # TG Migrator
 
-[English](../README.md) | **简体中文** | [Docs](https://tgmigrator.isgay.top/zh/) | [Docker](https://hub.docker.com/r/boexoel/tg-migrator)
+[English](../README.md) | **简体中文** | [Docs](https://tg-migrator.isgay.top/zh/) | [Docker](https://hub.docker.com/r/boexoel/tg-migrator)
 
 > **通过 Telegram Bot 交互管控的自托管消息归档与多端路由服务**
 > 支持将你拥有合法访问权限的 Telegram 群组、频道或论坛 Topic 消息，同步与结构化归档至 **其他 Telegram 会话**、**本地 NAS 目录** 或 **WebDAV 存储（Alist / Nextcloud 等）**，兼顾一次性历史迁移与 7×24 小时实时监听同步。

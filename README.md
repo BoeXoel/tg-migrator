@@ -1,6 +1,6 @@
 # TG Migrator
 
-**English** | [简体中文](docs/README.zh-CN.md) | [Docs](https://tgmigrator.isgay.top/) | [Docker](https://hub.docker.com/r/boexoel/tg-migrator)
+**English** | [简体中文](docs/README.zh-CN.md) | [Docs](https://tg-migrator.isgay.top/) | [Docker](https://hub.docker.com/r/boexoel/tg-migrator)
 
 > **Self-Hosted Telegram Media Archiver & Multi-Sink Message Router Controlled via Telegram Bot**
 > Synchronize and archive messages from Telegram groups, channels, or Forum Topics that you have legitimate access to into **other Telegram chats**, **local NAS directories**, or **WebDAV storage (Alist / Nextcloud / etc.)** — supporting both one-off historical migrations and 24/7 real-time watch routing.
