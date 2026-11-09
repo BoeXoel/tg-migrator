@@ -8,18 +8,20 @@
 
 | 命令 | 参数格式 | 功能说明 |
 | :--- | :--- | :--- |
-| `/start` 或 `/help` | — | 打开交互式主控制面板 |
+| `/start` | — | 打开快速上手引导与系统就绪状态概览面板 |
+| `/help` | — | 查看完整斜杠命令速查字典 |
 | `/lang` | `[en\|zh]` | 一键切换或指定 Bot 面板与通知语言（`en` 英文 / `zh` 简体中文） |
 | `/status` | — | 查看读取/写入账号状态、队列统计、Worker 状态与磁盘剩余空间 |
-| `/tasks` | — | 查看近期搬运任务列表与执行进度 |
-| `/targets` | — | 查看并管理所有目的地（Telegram、本地目录、WebDAV） |
+| `/tasks`（或 `/task`） | `[任务ID]` | 分页查看近期任务列表（每页 10 条），或传入 ID 打开单条任务详情与操作卡 |
+| `/targets`（或 `/target`） | `[目的地ID]` | 分页查看目的地列表（每页 10 条），或传入 ID 打开单个目的地的管理面板 |
 | `/bind` | `[绑定码]` | 在群组/子话题内发送：绑定为目的地；在私聊发送：生成 10 分钟一次性绑定码 |
 | `/add_tg` | `<群ID或@名> [话题ID]` | 在私聊中手动添加 Telegram 群组/频道或指定子 Topic 目的地 |
 | `/add_local` | — | 启动向导新建本地 NAS 归档目录（位于 `ARCHIVE_ROOT` 下） |
 | `/add_webdav` | — | 启动向导新建 WebDAV 归档目的地 |
-| `/routes` | — | 查看并管理长期监听路由 |
+| `/routes`（或 `/route`） | `[路由ID]` | 分页查看监听路由列表（每页 10 条），或传入 ID 打开单条路由的管理面板 |
 | `/add_route` | — | 启动向导新建长期监听路由 |
-| `/route_set` | `<路由ID> <键> <值\|->` | 为指定路由设置独立参数覆盖（传 `-` 移除该覆盖项） |
+| `/route_set` | `<路由ID> <键> <值>` | 为指定路由设置独立参数覆盖 |
+| `/route_unset` | `<路由ID> <键>` | 移除指定路由的单个参数覆盖项 |
 | `/config` | — | 打开交互式参数设置面板 |
 | `/get` | `[分区名\|键名]` | 查看全部设置、某一分区（如 `/get transfer`）或单个配置项当前值 |
 | `/set` | `<键名> <新值>` | 在线修改任意运行时参数（立即落库生效，无需重启容器） |
@@ -77,7 +79,7 @@
 | `transfer.drop_caption` | `false` | 搬运媒体时是否剥离附带的文字说明（Caption） |
 | `transfer.strip_spoilers` | `true` | 自动剥离图片/视频/文字上的防剧透遮罩（含遮罩时会自动走重传剥离） |
 | `transfer.native_copy` | `true` | 当读取号同时作为写入号且无需剥离剧透时，优先尝试零流量服务端原生复制 |
-| `transfer.native_only` | `false` | 仅允许原生复制（遇到禁止转发频道直接跳过而不下载重传） |
+| `transfer.native_only` | `false` | 仅使用服务端原生复制（不支持原生复制时直接跳过而不下载重传） |
 | `transfer.allow_premium_user_fallback` | `false` | 当 Bot 遇到 2GB~4GB 超大文件时，允许自动切换为已登录的 Premium 个人号上传 |
 | `transfer.allow_download_unknown_size` | `false` | 是否允许下载未预先标明文件大小的媒体 |
 | `transfer.caption_overflow` | `split` | 超长说明文字处理方式：`split`（超出部分拆分为紧随其后的纯文本消息）或 `truncate`（截断） |
@@ -88,7 +90,7 @@
 | `transfer.include.audio` | `true` | 是否搬运音乐/音频 |
 | `transfer.include.voice` | `true` | 是否搬运语音消息 |
 | `transfer.include.video_note` | `true` | 是否搬运圆形视频消息 |
-| `transfer.include.document` | `false` | **注意默认关闭**：是否搬运通用文件/压缩包（如 `.zip`、`.pdf`、`.apk` 等，需要搬运文件时请设为 `true`！） |
+| `transfer.include.document` | `false` | **默认关闭**：是否搬运通用文件/压缩包（如 `.zip`、`.pdf`、`.apk` 等，需搬运此类文件时应设为 `true`） |
 | `transfer.include.sticker` | `false` | 是否搬运贴纸 |
 | `transfer.include.other` | `false` | 是否搬运仅支持原生复制的特殊类型（投票、名片、位置等） |
 

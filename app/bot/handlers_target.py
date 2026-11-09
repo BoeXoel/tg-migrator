@@ -10,6 +10,7 @@ from telethon import Button, TelegramClient, events
 from app.bot.auth import admin_only
 from app.bot.context import AppContext
 from app.bot.ui import (
+    PAGE_SIZE,
     Step,
     Wizard,
     back_button,
@@ -19,6 +20,8 @@ from app.bot.ui import (
     esc,
     name_value,
     optional,
+    paginate_items,
+    pagination_row,
     target_detail,
     target_label,
     tr,
@@ -32,7 +35,7 @@ from app.telegram.client_manager import canonical_id, display_name
 log = logging.getLogger("migrator.bot.target")
 
 
-async def targets_view(ctx: AppContext) -> tuple[str, list[list[Any]]]:
+async def targets_view(ctx: AppContext, page: int = 0) -> tuple[str, list[list[Any]]]:
     lang = ctx.lang
     targets = await ctx.repo.list_targets()
     if not targets:
@@ -53,17 +56,33 @@ async def targets_view(ctx: AppContext) -> tuple[str, list[list[Any]]]:
             [back_button(b"m:home", lang=lang)],
         ]
         return text, rows
-    lines = [tr(lang, "<b>🎯 Targets (Destinations)</b>", "<b>🎯 目的地</b>")]
-    lines.extend(esc(target_label(target, lang)) for target in targets)
-    buttons = [Button.inline(f"#{t.id} {t.name}"[:40], f"tg:v:{t.id}".encode()) for t in targets]
-    rows = chunk_buttons(buttons, 2)
+    page_items, page, total_pages = paginate_items(targets, page, PAGE_SIZE)
+    page_suffix = f" ({page + 1}/{total_pages})" if total_pages > 1 else ""
+    lines = [tr(lang, f"<b>🎯 Targets (Destinations){page_suffix}</b>", f"<b>🎯 目的地{page_suffix}</b>")]
+    lines.extend(f"• {esc(target_label(target, lang))}" for target in page_items)
+    lines.append(
+        tr(
+            lang,
+            "\n💡 <i>Send <code>/targets &lt;ID&gt;</code> to manage a specific target (e.g. <code>/targets 1</code>).</i>",
+            "\n💡 <i>发送 <code>/targets &lt;ID&gt;</code> 管理指定目的地（如 <code>/targets 1</code>）。</i>",
+        )
+    )
+    rows: list[list[Any]] = []
+    nav = pagination_row("tg:list", page, total_pages, lang=lang)
+    if nav:
+        rows.append(nav)
     rows.append(
         [
             Button.inline(tr(lang, "➕ Local", "➕ 本地"), b"tg:new:local"),
             Button.inline(tr(lang, "➕ WebDAV", "➕ WebDAV"), b"tg:new:webdav"),
         ]
     )
-    rows.append([back_button(b"m:home", lang=lang)])
+    rows.append(
+        [
+            Button.inline(tr(lang, "🔄 Refresh", "🔄 刷新"), f"tg:list:{page}".encode()),
+            back_button(b"m:home", lang=lang),
+        ]
+    )
     return "\n".join(lines), rows
 
 
@@ -289,8 +308,8 @@ def _webdav_wizard(ctx: AppContext) -> Wizard:
                 "url",
                 tr(
                     lang,
-                    "WebDAV URL (supports https:// and internal http://, e.g. <code>http://alist:5244/dav</code>):",
-                    "WebDAV 地址（支持 https:// 与内网 http://，如 <code>http://alist:5244/dav</code>）：",
+                    "WebDAV URL (supports https:// and internal http://, e.g. <code>http://openlist:5244/dav</code>):",
+                    "WebDAV 地址（支持 https:// 与内网 http://，如 <code>http://openlist:5244/dav</code>）：",
                 ),
                 parse_url,
             ),
@@ -334,7 +353,20 @@ async def _test_webdav(ctx: AppContext, config: dict[str, Any]) -> str:
 
 
 async def cmd_targets(event: Any, ctx: AppContext) -> None:
-    text, buttons = await targets_view(ctx)
+    arg = command_args(event).lstrip("#").strip()
+    if arg:
+        if not arg.isdigit():
+            await event.respond(
+                ctx.t(
+                    "Usage: /targets <code>[target_id]</code>",
+                    "用法：/targets <code>[目的地ID]</code>",
+                )
+            )
+            return
+        text, buttons = await target_view(ctx, int(arg))
+        await event.respond(text, buttons=buttons)
+        return
+    text, buttons = await targets_view(ctx, page=0)
     await event.respond(text, buttons=buttons)
 
 
@@ -354,7 +386,8 @@ async def on_target_button(event: Any, ctx: AppContext) -> None:
     parts = event.data.decode().split(":")
     action = parts[1]
     if action == "list":
-        text, buttons = await targets_view(ctx)
+        page = int(parts[2]) if len(parts) > 2 and parts[2].lstrip("-").isdigit() else 0
+        text, buttons = await targets_view(ctx, page=page)
         await event.edit(text, buttons=buttons)
         return
     if action == "new":
@@ -435,21 +468,58 @@ async def on_target_button(event: Any, ctx: AppContext) -> None:
         return
     elif action == "fb":
         archives = [t for t in await ctx.repo.list_targets() if t.type in {"local", "webdav"}]
-        buttons = [Button.inline(target_label(t, lang)[:40], f"tg:fbs:{target_id}:{t.id}".encode()) for t in archives]
-        rows = chunk_buttons(buttons, 1)
-        rows.append(
-            [
-                Button.inline(tr(lang, "None (record only)", "无（仅记录）"), f"tg:fbs:{target_id}:0".encode()),
-                back_button(f"tg:v:{target_id}".encode(), lang=lang),
-            ]
+        valid_fb_ids = {t.id for t in archives}
+        listing = "\n".join(f"• {esc(target_label(t, lang))}" for t in archives[:PAGE_SIZE]) or tr(
+            lang, "(no Local or WebDAV targets yet)", "（还没有本地或 WebDAV 目的地）"
         )
-        await event.edit(
-            tr(
+        if len(archives) > PAGE_SIZE:
+            listing += tr(
                 lang,
-                f"Select oversized file fallback target for <b>{esc(target.name)}</b>:\nFiles exceeding Telegram's upload limit will be saved here instead.",
-                f"为 <b>{esc(target.name)}</b> 选择超限备用目的地：\n超过 Telegram 上传上限的文件会改存到这里。",
+                f"\n<i>…and {len(archives) - PAGE_SIZE} more (see /targets)</i>",
+                f"\n<i>…其余 {len(archives) - PAGE_SIZE} 个请通过 /targets 查看</i>",
+            )
+
+        def parse_fallback_id(raw: str) -> int | None:
+            cleaned = raw.strip().lstrip("#").lower()
+            if cleaned in {"0", "-", "none", "无"}:
+                return None
+            if not cleaned.isdigit() or int(cleaned) not in valid_fb_ids:
+                raise ValueError(
+                    tr(
+                        lang,
+                        "Please enter a valid Local/WebDAV target ID, or 0 / - to clear",
+                        "请输入有效的本地/WebDAV 目的地编号，或输入 0 / - 清除备用",
+                    )
+                )
+            return int(cleaned)
+
+        async def save_fallback(evt: Any, values: dict[str, Any]) -> None:
+            await ctx.repo.update_target(target_id, fallback_target_id=values["fb_id"])
+            text, buttons = await target_view(ctx, target_id)
+            await evt.respond(text, buttons=buttons)
+
+        await event.answer()
+        await ctx.state.wizards.start(
+            event,
+            Wizard(
+                tr(lang, f"Set Oversized Fallback for {target.name}", f"为 {target.name} 设置超限备用目的地"),
+                [
+                    Step(
+                        "fb_id",
+                        tr(
+                            lang,
+                            f"Available Local/WebDAV archive targets:\n{listing}\n\n"
+                            "Reply with the fallback target ID (or send <code>0</code> / <code>-</code> for none):",
+                            f"可用的本地/WebDAV 归档目的地：\n{listing}\n\n"
+                            "请回复备用目的地编号（发送 <code>0</code> 或 <code>-</code> 表示不设置）：",
+                        ),
+                        parse_fallback_id,
+                    )
+                ],
+                save_fallback,
+                lang=lang,
+                back_data=f"tg:v:{target_id}".encode(),
             ),
-            buttons=rows,
         )
         return
     elif action == "fbs":
@@ -483,6 +553,7 @@ async def on_target_button(event: Any, ctx: AppContext) -> None:
 
 def register(bot: TelegramClient, ctx: AppContext) -> None:
     bot.add_event_handler(admin_only(ctx, cmd_targets), events.NewMessage(pattern=command("targets")))
+    bot.add_event_handler(admin_only(ctx, cmd_targets), events.NewMessage(pattern=command("target")))
     bot.add_event_handler(admin_only(ctx, cmd_add_local), events.NewMessage(pattern=command("add_local")))
     bot.add_event_handler(admin_only(ctx, cmd_add_webdav), events.NewMessage(pattern=command("add_webdav")))
     bot.add_event_handler(admin_only(ctx, cmd_add_tg), events.NewMessage(pattern=command("add_tg")))

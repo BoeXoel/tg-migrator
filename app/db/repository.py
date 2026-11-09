@@ -304,7 +304,7 @@ class Repository:
         async with self._sm() as session:
             return await session.get(Task, task_id)
 
-    async def list_tasks(self, limit: int = 10) -> list[Task]:
+    async def list_tasks(self, limit: int = 100) -> list[Task]:
         async with self._sm() as session:
             stmt = select(Task).order_by(Task.id.desc()).limit(limit)
             return list((await session.execute(stmt)).scalars().all())

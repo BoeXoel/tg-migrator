@@ -1,78 +1,79 @@
 # Migration Tasks & Watch Routes
 
-TG Migrator offers two complementary ways to migrate content:
-1. **Ad-hoc Migration Tasks**: Send a link (or range of links) directly to the Bot for one-off or batch historical transfers.
-2. **Watch Routes (`/routes`)**: Bind a source chat/topic to one or more destinations for continuous real-time synchronization and scheduled watermark polling.
+TG Migrator provides two complementary migration workflows:
+1. **Ad-hoc Migration Tasks**: Send a message link or range directly to the Bot for one-off or batch historical transfers.
+2. **Watch Routes (`/routes`)**: Bind a source chat or topic to one or more destinations for continuous 24/7 synchronization and historical backfilling.
 
 ---
 
 ## 1. One-Off & Batch Migration Tasks
 
-Whenever you want to grab a specific message, an album, a range of messages, or an entire topic's history, simply send the message link(s) to the Bot in private chat.
+To transfer a single message, an entire album, a message ID range, or a topic's history, send the message link(s) directly to the Bot in private chat.
 
 ### Supported Link Formats
 
-| What You Want to Migrate | Example Input Sent to Bot |
+| Migration Scenario | Example Input Sent to Bot |
 | :--- | :--- |
 | **Single Message / Album** | `https://t.me/c/123456789/42`<br>`https://t.me/public_channel/42` |
 | **Single Message inside a Forum Topic** | `https://t.me/c/123456789/15/42` *(Topic `15`, Message `42`)* |
-| **Message Range (Hyphen Syntax)** | `https://t.me/c/123456789/100-500`<br>`https://t.me/c/123456789/15/100-500` |
+| **Message Range (Hyphen Syntax)** | `https://t.me/c/123456789/100-500`<br>`https://t.me/c/123456789/15/100-500` *(Scans messages `100`–`500` within Topic `15`)* |
 | **Message Range (Two Links)** | `https://t.me/c/123456789/100 https://t.me/c/123456789/500` |
 | **Private Group Invite Link** | `https://t.me/+AbCdEfGhIjKlMnOp` *(Reader account must be a member)* |
 
-### Target Selection Interactive Prompt
+### Target Selection & Execution
 
-After you send a link or range:
-1. The Bot replies with a **target selection card** listing all your enabled Targets (`☑️ #1 MyGroup_t128`, `⬜ #2 nas_movies`, etc.).
-2. Tap one or more targets to toggle `☑️` / `⬜` (multi-destination fan-out is supported!).
-3. Tap **`🚀 Start`** to launch the scanner and enqueue the jobs.
+When a link or range is submitted:
+1. The Bot replies with a **target selection card** displaying a paginated text list of enabled destinations (10 per page, with `⬅️ Prev` / `Next ➡️` navigation when more than 10 targets exist).
+2. Reply directly with one or more target IDs (comma-separated, e.g. `1` or `1, 2` for multi-destination fan-out) to launch the scanner and enqueue transfer jobs immediately, or tap **`✖️ Cancel`** to abort.
 
-> [!TIP] Album Grouping & Deduplication
-> - **Albums**: If a single link points to one photo/video inside a 10-item Telegram Album, TG Migrator automatically detects `grouped_id`, fetches all 10 items of that album, and delivers them together as a single intact Album!
-> - **Deduplication**: Every job is hashed by its global Telegram media ID (for files) or `(source_chat_id, message_ids)` (for text). Re-running an overlapping range will automatically skip already-queued/delivered items.
+> [!TIP] Automatic Album Grouping & Global Deduplication
+> - **Album Grouping**: When a single link points to one item inside a multi-item Telegram Album, TG Migrator automatically inspects surrounding messages for a matching `grouped_id`, groups all items of the album, and delivers them together as an intact Album.
+> - **Deduplication**: Every media job is keyed by its global Telegram media identifier (`doc_id` / `photo_id`). Re-scanning an overlapping message range automatically skips previously delivered items.
 
 ---
 
 ## 2. Continuous Watch Routes (`/routes`)
 
-If you want to mirror a source channel/group (or a specific Forum Topic) continuously—and optionally backfill its entire history—create a **Watch Route**.
+To continuously mirror a source channel, group, or specific Forum Topic, create a **Watch Route**.
 
 ### Creating a Watch Route
 
 1. Open **`🔁 Routes`** → tap **`➕ New Route`** (or send `/add_route`).
-2. Follow the 4-step wizard:
+2. Complete the 4-step interactive wizard:
    - **Route name**: e.g. `news_feed`
-   - **Source**: Send any message link from the source chat (if the link is from a Forum Topic like `https://t.me/c/123456/15/99`, the route automatically locks onto Topic `15`!), or send `@username` / `-100ID [topic_id]`.
-   - **Target IDs**: Enter one or more target numbers separated by commas (e.g. `1, 2`).
-   - **Enable live watching (`y/n`)**: Choose `y` to start monitoring immediately.
+   - **Source**:
+     - Send any message link from the source chat;
+     - **Locking onto a Source Forum Topic**: If a Forum Topic message link is provided (e.g. `https://t.me/c/123456/15/99`), the route automatically scopes itself to **Topic `15` only**, ignoring messages from other topics in that group;
+     - Alternatively, enter `@username` or `-100<ChatID> [topic_id]`.
+   - **Target IDs**: Enter one or more target IDs separated by commas (e.g. `1, 2`).
+   - **Enable live watching (`y/n`)**: Enter `y` to start monitoring immediately.
 
-### How Hybrid Live Watch Works
+### Hybrid Live Watch Architecture
 
-TG Migrator uses a **dual-engine watch architecture** so no message is ever lost:
-1. **Real-Time Event Listener**: Receives new messages (and albums after a 2.5-second grouping window) the instant they are posted.
-2. **Periodic Watermark Polling (`last_seen_msg_id`)**: Every `watch.poll_interval_seconds` (default `300s`), the watcher polls any messages newer than the persisted `last_seen_msg_id` watermark. Even if your server reboots or loses network for an hour, it automatically catches up on every missed message as soon as it reconnects!
+To prevent missed messages during network interruptions or container restarts, TG Migrator combines two mechanisms:
+1. **Real-Time Event Listener**: Captures new messages immediately upon publication (applying a 2.5-second grouping window for multi-item albums).
+2. **Periodic Watermark Polling (`last_seen_msg_id`)**: Every `watch.poll_interval_seconds` (default `300s`), the watcher queries messages newer than the persisted `last_seen_msg_id` watermark. After any downtime or restart, missed messages are automatically backfilled upon reconnection.
 
 ### Backfilling Historical Messages on a Route
 
-In **`🔁 Routes`** → select your route → tap **`📜 Scan History`**:
-- **`All History (from 1)`**: Scans the entire source chat (or source Topic) from the very first message to the latest.
-- **`Custom Range`**: Prompts you for `start_id - end_id` (e.g. `1 - 1000` or two message links).
-- **`⏩ Catch Up Now`**: Immediately triggers a watermark catch-up poll without waiting for the timer.
+Send `/routes <ID>` (e.g. `/routes 1` or `/route 1`) to open the route's management card, then tap **`📜 Scan History`**:
+- **Message Range**: Enter `start_id - end_id` (e.g. `1 - 5000` or two message links) to backfill historical messages.
+- **`⏩ Catch Up Now`**: Triggers an immediate incremental watermark poll without waiting for the scheduled interval.
 
 ---
 
 ## 3. Content Filtering (`/filters`)
 
-You can block unwanted messages (such as sponsored posts, external ad links, or specific keywords) across both Tasks and Watch Routes.
+Content filters automatically block unwanted messages (such as sponsored posts, invite links, or specific keywords) across both Tasks and Watch Routes.
 
-- **Open Filter Panel**: Send `/filters` (or go to **`⚙️ Settings` → `🧹 Filters`**).
+- **Open Filter Panel**: Send `/filters` (or navigate to **`⚙️ Settings` → `🧹 Filters`**).
 - **Add a Keyword Rule**:
   ```text
   /filter_add keyword #ad
   ```
 - **Add a Regular Expression Rule**:
   ```text
-  /filter_add regex https?://t\.me/joinchat/\S+
+  /filter_add regex https?://t\.me/(\+|joinchat/)\S+
   ```
 - **Delete a Rule**:
   ```text
@@ -85,13 +86,13 @@ You can block unwanted messages (such as sponsored posts, external ad links, or 
 
 ## 4. Per-Route Setting Overrides (`/route_set`)
 
-Need global settings to keep captions, but want **one specific route** to strip captions or only transfer videos? Every route supports dotted setting overrides that take precedence over global settings:
+Each Watch Route supports dotted setting overrides that take precedence over global runtime settings. For example, to keep captions globally while stripping captions or excluding plain text on a single route:
 
 ```text
-# Strip captions only on Route #1
+# Strip media captions on Route #1 only
 /route_set 1 transfer.drop_caption true
 
-# Disable text messages on Route #1 (media only)
+# Ignore plain text messages on Route #1 only
 /route_set 1 transfer.include.text false
 
 # Remove a route override and revert to global setting
@@ -102,8 +103,8 @@ Need global settings to keep captions, but want **one specific route** to strip 
 
 ## 5. Queue Management & Recovery
 
-- **View Live Queue & Disk Space**: Send `/status` (or tap **`📊 Status`**).
-- **Pause / Resume Worker**: Send `/pause` (finishes the current in-flight file cleanly and pauses) and `/resume`.
+- **Inspect Queue & Disk Space**: Send `/status` (or tap **`📊 Status`**).
+- **Pause / Resume Worker**: Send `/pause` (completes the current in-flight transfer cleanly before pausing) and `/resume`.
 - **Retry Failed Jobs**: Send `/retry` (retries all failed jobs) or `/retry 5` (retries failed jobs in Task `#5`).
 - **Cancel a Running Task**: Send `/cancel_task 5` (or tap **`✖️ Cancel`** inside **`📋 Tasks`**).
-- **Verify Delivered Messages**: Send `/verify` to check that previously delivered Telegram messages still exist in the destination chat.
+- **Verify Delivered Messages**: Send `/verify` to sample and verify that previously delivered Telegram messages still exist in the destination chat.

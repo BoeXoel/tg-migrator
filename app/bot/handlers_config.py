@@ -12,7 +12,20 @@ from telethon import Button, TelegramClient, events
 from app.backup import export_yaml, import_yaml
 from app.bot.auth import admin_only
 from app.bot.context import AppContext
-from app.bot.ui import back_button, chunk_buttons, command, command_args, esc, kind_labels, onoff, tr
+from app.bot.ui import (
+    PAGE_SIZE,
+    back_button,
+    chunk_buttons,
+    command,
+    command_args,
+    esc,
+    kind_labels,
+    onoff,
+    paginate_items,
+    pagination_row,
+    sync_bot_commands,
+    tr,
+)
 from app.config import CHOICES, SECTION_NAMES, dataclass_to_dict, get_setting, leaf_paths
 from app.engine.filters import validate_rule
 
@@ -176,20 +189,35 @@ def config_view(ctx: AppContext, section: str = "main") -> tuple[str, list[list[
     )
 
 
-async def rules_text(ctx: AppContext) -> str:
+async def rules_view(ctx: AppContext, page: int = 0) -> tuple[str, list[list[Any]]]:
     lang = ctx.lang
     rules = await ctx.repo.list_filters()
     if not rules:
-        return tr(
-            lang,
-            "No filter rules configured.\n/filter_add keyword &lt;word&gt;\n/filter_add regex &lt;pattern&gt;",
-            "暂无过滤规则。\n/filter_add keyword 关键词\n/filter_add regex 正则",
+        return (
+            tr(
+                lang,
+                "No filter rules configured.\n/filter_add keyword &lt;word&gt;\n/filter_add regex &lt;pattern&gt;",
+                "暂无过滤规则。\n/filter_add keyword 关键词\n/filter_add regex 正则",
+            ),
+            [[back_button(b"cfg:s:filters", lang=lang)]],
         )
-    lines = [tr(lang, "<b>Filter Rules</b>", "<b>过滤规则</b>")]
-    for rule in rules:
-        lines.append(f"#{rule.id} {'✅' if rule.enabled else '⬜'} {rule.rule_type}: <code>{esc(rule.pattern)}</code>")
+    page_items, page, total_pages = paginate_items(rules, page, PAGE_SIZE)
+    page_suffix = f" ({page + 1}/{total_pages})" if total_pages > 1 else ""
+    lines = [tr(lang, f"<b>🧹 Filter Rules{page_suffix}</b>", f"<b>🧹 过滤规则{page_suffix}</b>")]
+    for rule in page_items:
+        lines.append(f"• <code>#{rule.id}</code> {'✅' if rule.enabled else '⬜'} {rule.rule_type}: <code>{esc(rule.pattern)}</code>")
     lines.append(tr(lang, "\n/filter_del ID to delete · /filter_toggle ID to enable/disable", "\n/filter_del ID 删除 · /filter_toggle ID 启停"))
-    return "\n".join(lines)
+    rows: list[list[Any]] = []
+    nav = pagination_row("cfg:rules", page, total_pages, lang=lang)
+    if nav:
+        rows.append(nav)
+    rows.append([back_button(b"cfg:s:filters", lang=lang)])
+    return "\n".join(lines), rows
+
+
+async def rules_text(ctx: AppContext, page: int = 0) -> str:
+    text, _ = await rules_view(ctx, page=page)
+    return text
 
 
 async def cmd_config(event: Any, ctx: AppContext) -> None:
@@ -233,7 +261,10 @@ async def cmd_get(event: Any, ctx: AppContext) -> None:
 
 
 async def cmd_filters(event: Any, ctx: AppContext) -> None:
-    await event.respond(await rules_text(ctx))
+    arg = command_args(event).strip()
+    page = max(0, int(arg) - 1) if arg.isdigit() else 0
+    text, buttons = await rules_view(ctx, page=page)
+    await event.respond(text, buttons=buttons)
 
 
 async def cmd_filter_add(event: Any, ctx: AppContext) -> None:
@@ -358,6 +389,8 @@ async def on_config_button(event: Any, ctx: AppContext) -> None:
     elif action == "lang":
         new_lang = "zh" if ctx.lang == "en" else "en"
         await ctx.store.set("ui.language", new_lang)
+        admin_ids = getattr(getattr(ctx, "boot", None), "admin_ids", None) or (event.sender_id,)
+        await sync_bot_commands(getattr(getattr(ctx, "clients", None), "bot", None), new_lang, admin_ids)
         await event.answer("已切换为简体中文" if new_lang == "zh" else "Switched to English")
         section = "main"
     elif action == "t":
@@ -371,7 +404,9 @@ async def on_config_button(event: Any, ctx: AppContext) -> None:
         await ctx.store.set(path, options[(options.index(current) + 1) % len(options)] if current in options else options[0])
         section = _section_for(path)
     elif action == "rules":
-        await event.edit(await rules_text(ctx), buttons=[[back_button(b"cfg:s:filters", lang=ctx.lang)]])
+        page = int(parts[2]) if len(parts) > 2 and parts[2].lstrip("-").isdigit() else 0
+        text, buttons = await rules_view(ctx, page=page)
+        await event.edit(text, buttons=buttons)
         return
     elif action == "export":
         await event.answer()

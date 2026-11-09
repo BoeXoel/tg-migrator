@@ -20,7 +20,7 @@ from app.proxy import http_proxy_for, is_internal_host
         "100.100.1.1",
         "::1",
         "fd00::1",
-        "alist",
+        "openlist",
         "nas.local",
         "files.lan",
         "dav.internal",
@@ -63,7 +63,7 @@ def test_bad_proxy_scheme():
 
 def test_http_proxy_decision():
     proxy = ProxyConfig.from_env({"PROXY_URL": "http://proxy.example:8080", "PROXY_BYPASS_RESOLVE": "false"})
-    assert asyncio.run(http_proxy_for("http://alist:5244/dav", proxy)) is None
+    assert asyncio.run(http_proxy_for("http://openlist:5244/dav", proxy)) is None
     assert asyncio.run(http_proxy_for("http://192.168.1.2/dav", proxy)) is None
     assert asyncio.run(http_proxy_for("https://dav.example.com/dav", proxy)) == "http://proxy.example:8080"
 

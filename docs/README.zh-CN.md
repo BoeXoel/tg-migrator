@@ -3,7 +3,7 @@
 [English](../README.md) | **简体中文** | [文档](https://tg-migrator.isgay.top/zh/) | [Docker](https://hub.docker.com/r/boexoel/tg-migrator)
 
 > **通过 Telegram Bot 交互管控的自托管消息归档与多端路由服务**
-> 支持将你拥有合法访问权限的 Telegram 群组、频道或论坛 Topic 消息，同步与结构化归档至 **其他 Telegram 会话**、**本地 NAS 目录** 或 **WebDAV 存储（Alist / Nextcloud 等）**，兼顾一次性历史迁移与 7×24 小时实时监听同步。
+> 支持将你拥有合法访问权限的 Telegram 群组、频道或论坛 Topic 消息，同步与结构化归档至 **其他 Telegram 会话**、**本地 NAS 目录** 或 **WebDAV 存储（OpenList / Nextcloud 等）**，兼顾一次性历史迁移与 7×24 小时实时监听同步。
 
 ---
 
@@ -13,7 +13,7 @@
 - **多端存储目的地（Multi-Sink）**：
   - `telegram`：支持目标群组、频道及 Forum Topic。优先采用免下载的**原生复制（Native Copy）**；当跨会话无法直接复制或需清洗剧透遮罩时，自动回退为**本地流式下载重传**，完整保留视频宽高与时长、音频标签、语音波形、原始文件名及安全缩略图，并支持相册（Album）整组聚合发送。
   - `local`：结构化归档至容器挂载的本地目录（严格做 `ARCHIVE_ROOT` 路径越界防护，适配 NAS 本地盘）。
-  - `webdav`：支持公网 HTTPS 及内网 HTTP（如 `http://alist:5244/dav`），提供**本地缓存落盘后上传（Spool）**与**零落盘流式直传（Zero-Disk Stream）**两种模式。
+  - `webdav`：支持公网 HTTPS 及内网 HTTP（如 `http://openlist:5244/dav`），提供**本地缓存落盘后上传（Spool）**与**零落盘流式直传（Zero-Disk Stream）**两种模式。
 - **长期监听与多路路由（Watch & Route）**：支持配置“单来源（可精确到 Topic）→ 多目的地”的持久化路由；支持新消息实时监听（相册自动凑齐整组）与水位线（Watermark）定时巡检，服务重启后自动补齐期间遗漏的消息。
 - **全媒体与消息形态覆盖**：纯文本、图片、视频、GIF 动图、音频、语音、圆形视频消息（Video Note）、通用文件、贴纸；投票与地理位置等特殊消息支持原生复制。
 - **超大文件智能分流**：自动识别普通账号/Bot（2000 MiB）与 Telegram Premium（4000 MiB）上传上限；支持配置由 Premium 读取账号代发 2–4 GiB 大文件，或自动将超限文件降级转存至绑定的本地 / WebDAV 备用目的地。
@@ -84,7 +84,7 @@ docker compose up -d --build
 发送 `/add_route` 按交互向导配置：**路由名称 → 来源会话（可选定特定 Topic） → 一个或多个目的地 ID → 是否开启实时监听**。
 
 - **实时触发 + 巡检兜底**：开启监听后，既会通过事件流实时捕获新消息（相册自动聚合），也会按 `watch.poll_interval_seconds` 周期以及在容器重启时，基于数据库水位线（`last_seen_msg_id`）自动扫描并补齐离线期间遗漏的消息。
-- **历史回溯**：在 `/routes` 路由详情面板中点击「扫描历史」，即可将该路由来源的历史存量消息批量压入迁移队列。
+- **历史回溯**：发送 `/routes <ID>` 打开路由详情面板并点击「扫描历史」，即可将该路由来源的历史存量消息批量压入迁移队列。
 - **路由级独立配置**：支持针对单条路由覆盖全局设置，例如：
   - `/route_set <路由ID> transfer.include.document true`
   - `/route_unset <路由ID> transfer.include.document`
@@ -122,7 +122,7 @@ docker compose up -d --build
 | `archive.webdav_mode` | `auto` | `auto`（本地空间充足时先落盘，不足时自动转流式）、`stream`（强制零落盘流式直传）、`spool`（强制先落盘） |
 | `archive.sidecar_format` | `json` | 文本与配文元数据格式：`json` / `md` / `both` / `none` |
 | `archive.group_by_month` | `false` | 是否在归档路径中增加 `YYYY-MM/` 月份目录层 |
-| `worker.batch_size` / `pause_between_batches_seconds` | `25` / `600` | 每批次连续处理的任务项数及批次间冷却秒数，平滑请求曲线以降低账号风控概率 |
+| `worker.batch_size` / `pause_between_batches_seconds` | `50` / `120` | 每批次连续处理的任务项数及批次间冷却秒数，平滑请求曲线以降低账号风控概率 |
 | `downloads.min_free_bytes` | `5368709120` (5 GiB) | 下载暂存目录最低保留可用空间水位线 |
 | `limits.*` | — | 各类 MTProto 操作的最小间隔与 FloodWait 退避上限 |
 
@@ -178,7 +178,7 @@ PROXY_BYPASS_RESOLVE=true
 - **内网 WebDAV 自动直连**：访问以下目标时会自动绕过代理直连：
   - `localhost` 及环回地址（`127.0.0.0/8`、`::1`）
   - 私有与保留网段（`10.0.0.0/8`、`172.16.0.0/12`、`192.168.0.0/16`、`169.254.0.0/16`、`100.64.0.0/10` CGNAT/Tailscale、IPv6 ULA/Link-Local）
-  - 单标签主机名（如 Docker Compose 内部服务名 `alist`、`nextcloud`）
+  - 单标签主机名（如 Docker Compose 内部服务名 `openlist`、`nextcloud`）
   - `.local` / `.lan` / `.internal` / `.home.arpa` 域名及 `NO_PROXY` 列表
   - 当 `PROXY_BYPASS_RESOLVE=true`（默认）时，DNS 解析结果为上述内网 IP 的自定义域名同样自动直连。
 
@@ -199,11 +199,11 @@ PROXY_BYPASS_RESOLVE=true
 
 | 类别 | 命令 | 说明 |
 | --- | --- | --- |
-| **状态与任务** | `/start` `/status` `/tasks` | 打开主菜单、查看系统实时运行状态与最近任务列表 |
+| **状态与任务** | `/start` `/help` `/status` `/tasks [ID]` | 打开主菜单、完整命令速查、查看系统实时运行状态与任务 |
 | **任务控制** | `/pause` `/resume` `/recover` | 暂停队列、恢复队列、恢复异常中断的任务 |
 | **重试与取消** | `/retry [任务ID]` `/cancel_task <ID>` | 重新排队失败的消息项、取消指定运行中任务 |
-| **目的地管理** | `/targets` `/bind` `/add_tg` `/add_local` `/add_webdav` | 查看、绑定、新增或测试各类存储目的地 |
-| **路由与监听** | `/routes` `/add_route` `/route_set` `/route_unset` | 管理长期同步路由、历史扫描与路由级参数覆盖 |
+| **目的地管理** | `/targets [ID]` `/bind` `/add_tg` `/add_local` `/add_webdav` | 查看、管理单条目详情、绑定、新增或测试各类存储目的地 |
+| **路由与监听** | `/routes [ID]` `/add_route` `/route_set` `/route_unset` | 管理长期同步路由、历史扫描与路由级参数覆盖 |
 | **系统配置** | `/config` `/lang` `/get [前缀]` `/set <键> <值>` | 可视化配置面板、一键切换中英语言、查询或在线修改运行时参数 |
 | **内容过滤** | `/filters` `/filter_add` `/filter_del` `/filter_toggle` | 管理关键词/正则表达式黑白名单与媒体类型过滤 |
 | **备份与维护** | `/export [secrets]` `/import [replace]` | 导出或导入 YAML 配置文件 |

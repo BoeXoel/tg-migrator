@@ -12,6 +12,7 @@ from app.bot.auth import admin_only
 from app.bot.context import AppContext
 from app.bot.handlers_task import launch_scan
 from app.bot.ui import (
+    PAGE_SIZE,
     Step,
     Wizard,
     back_button,
@@ -20,6 +21,8 @@ from app.bot.ui import (
     command_args,
     esc,
     name_value,
+    paginate_items,
+    pagination_row,
     target_id_list,
     target_label,
     tr,
@@ -43,7 +46,7 @@ def _parse_source(value: str) -> dict[str, Any]:
     return {"chat": parts[0], "topic_id": topic}
 
 
-async def routes_view(ctx: AppContext) -> tuple[str, list[list[Any]]]:
+async def routes_view(ctx: AppContext, page: int = 0) -> tuple[str, list[list[Any]]]:
     lang = ctx.lang
     routes = await ctx.repo.list_routes()
     if not routes:
@@ -58,13 +61,32 @@ async def routes_view(ctx: AppContext) -> tuple[str, list[list[Any]]]:
                 [back_button(b"m:home", lang=lang)],
             ],
         )
-    lines = [tr(lang, "<b>🔁 Watch Routes</b>", "<b>🔁 路由</b>")]
-    for route in routes:
+    page_items, page, total_pages = paginate_items(routes, page, PAGE_SIZE)
+    page_suffix = f" ({page + 1}/{total_pages})" if total_pages > 1 else ""
+    lines = [tr(lang, f"<b>🔁 Watch Routes{page_suffix}</b>", f"<b>🔁 路由{page_suffix}</b>")]
+    for route in page_items:
         flags = ("👁" if route.watch_enabled else "") + ("" if route.enabled else "⏸")
-        lines.append(f"#{route.id} {esc(route.name)} {flags}\n    {esc(route.source_title or route.source_chat_id)} → {route.target_ids}")
-    buttons = [Button.inline(f"#{r.id} {r.name}"[:40], f"rt:v:{r.id}".encode()) for r in routes]
-    rows = chunk_buttons(buttons, 2)
-    rows.append([Button.inline(tr(lang, "➕ New Route", "➕ 新建路由"), b"rt:new")])
+        lines.append(
+            f"• <code>#{route.id}</code> {esc(route.name)} {flags}\n"
+            f"    {esc(route.source_title or route.source_chat_id)} → {route.target_ids}"
+        )
+    lines.append(
+        tr(
+            lang,
+            "\n💡 <i>Send <code>/routes &lt;ID&gt;</code> to manage a specific route (e.g. <code>/routes 1</code>).</i>",
+            "\n💡 <i>发送 <code>/routes &lt;ID&gt;</code> 管理指定路由（如 <code>/routes 1</code>）。</i>",
+        )
+    )
+    rows: list[list[Any]] = []
+    nav = pagination_row("rt:list", page, total_pages, lang=lang)
+    if nav:
+        rows.append(nav)
+    rows.append(
+        [
+            Button.inline(tr(lang, "➕ New Route", "➕ 新建路由"), b"rt:new"),
+            Button.inline(tr(lang, "🔄 Refresh", "🔄 刷新"), f"rt:list:{page}".encode()),
+        ]
+    )
     rows.append([back_button(b"m:home", lang=lang)])
     return "\n".join(lines), rows
 
@@ -118,7 +140,14 @@ async def route_view(ctx: AppContext, route_id: int) -> tuple[str, list[list[Any
 async def _targets_prompt(ctx: AppContext) -> str:
     lang = ctx.lang
     targets = await ctx.repo.list_targets()
-    listing = "\n".join(esc(target_label(t, lang)) for t in targets) or tr(lang, "(no targets yet)", "（还没有目的地）")
+    shown = targets[:PAGE_SIZE]
+    listing = "\n".join(f"• {esc(target_label(t, lang))}" for t in shown) or tr(lang, "(no targets yet)", "（还没有目的地）")
+    if len(targets) > PAGE_SIZE:
+        listing += tr(
+            lang,
+            f"\n<i>…and {len(targets) - PAGE_SIZE} more (see /targets)</i>",
+            f"\n<i>…其余 {len(targets) - PAGE_SIZE} 个请通过 /targets 查看</i>",
+        )
     return tr(lang, f"Target ID(s), comma-separated:\n{listing}", f"目的地编号，逗号分隔：\n{listing}")
 
 
@@ -183,7 +212,20 @@ async def _route_wizard(ctx: AppContext) -> Wizard:
 
 
 async def cmd_routes(event: Any, ctx: AppContext) -> None:
-    text, buttons = await routes_view(ctx)
+    arg = command_args(event).lstrip("#").strip()
+    if arg:
+        if not arg.isdigit():
+            await event.respond(
+                ctx.t(
+                    "Usage: /routes <code>[route_id]</code>",
+                    "用法：/routes <code>[路由ID]</code>",
+                )
+            )
+            return
+        text, buttons = await route_view(ctx, int(arg))
+        await event.respond(text, buttons=buttons)
+        return
+    text, buttons = await routes_view(ctx, page=0)
     await event.respond(text, buttons=buttons)
 
 
@@ -250,7 +292,8 @@ async def on_route_button(event: Any, ctx: AppContext) -> None:
     parts = event.data.decode().split(":")
     action = parts[1]
     if action == "list":
-        text, buttons = await routes_view(ctx)
+        page = int(parts[2]) if len(parts) > 2 and parts[2].lstrip("-").isdigit() else 0
+        text, buttons = await routes_view(ctx, page=page)
         await event.edit(text, buttons=buttons)
         return
     if action == "new":
@@ -401,6 +444,7 @@ def _parse_range(value: str) -> tuple[int, int]:
 
 def register(bot: TelegramClient, ctx: AppContext) -> None:
     bot.add_event_handler(admin_only(ctx, cmd_routes), events.NewMessage(pattern=command("routes")))
+    bot.add_event_handler(admin_only(ctx, cmd_routes), events.NewMessage(pattern=command("route")))
     bot.add_event_handler(admin_only(ctx, cmd_add_route), events.NewMessage(pattern=command("add_route")))
     bot.add_event_handler(admin_only(ctx, cmd_route_set), events.NewMessage(pattern=command("route_set")))
     bot.add_event_handler(admin_only(ctx, cmd_route_unset), events.NewMessage(pattern=command("route_unset")))
