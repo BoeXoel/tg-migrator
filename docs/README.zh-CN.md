@@ -1,242 +1,119 @@
-# TG Migrator
+<div align="center">
+  <img src="./public/logo.png" alt="TG Migrator logo" width="80" height="80" />
+  <h1>TG Migrator</h1>
+  <p><strong>你的 Telegram 消息，随处归档与多端路由。</strong></p>
+  <p>给你的 Bot 发一条消息链接，即可将群组、频道或子话题同步归档至 Telegram、本地 NAS 或 WebDAV。<br />自托管、开源、全程在 Telegram 内交互管控。</p>
+  <p>
+    <a href="https://hub.docker.com/r/boexoel/tg-migrator" target="_blank" rel="noopener noreferrer"><img src="https://img.shields.io/docker/v/boexoel/tg-migrator?sort=semver&color=0284c7&label=docker" alt="Docker version" /></a>
+    <a href="../LICENSE"><img src="https://img.shields.io/github/license/BoeXoel/tg-migrator?color=52525b" alt="AGPL-3.0 license" /></a>
+    <a href="https://github.com/BoeXoel/tg-migrator/stargazers"><img src="https://img.shields.io/github/stars/BoeXoel/tg-migrator?style=flat&color=52525b" alt="GitHub stars" /></a>
+  </p>
+  <p><a href="https://tg-migrator.isgay.top/zh/" target="_blank" rel="noopener noreferrer">文档</a> · <a href="https://hub.docker.com/r/boexoel/tg-migrator" target="_blank" rel="noopener noreferrer">Docker Hub</a> · <a href="../README.md">English</a></p>
+</div>
 
-[English](../README.md) | **简体中文** | [文档](https://tg-migrator.isgay.top/zh/) | [Docker](https://hub.docker.com/r/boexoel/tg-migrator)
+## 快速开始
 
-> **通过 Telegram Bot 交互管控的自托管消息归档与多端路由服务**
-> 支持将你拥有合法访问权限的 Telegram 群组、频道或论坛 Topic 消息，同步与结构化归档至 **其他 Telegram 会话**、**本地 NAS 目录** 或 **WebDAV 存储（OpenList / Nextcloud 等）**，兼顾一次性历史迁移与 7×24 小时实时监听同步。
+下载 [`docker-compose.yml`](../docker-compose.yml) 与 [`.env.example`](../.env.example)，在 `.env` 中填入 `API_ID`、`API_HASH`、`BOT_TOKEN` 和 `ADMIN_IDS`，然后启动容器：
 
----
-
-## 核心特性
-
-- **全交互式 Bot 管控**：私聊发送消息链接即可下达迁移任务；目的地绑定、监听路由、过滤规则、运行参数均可在 Bot 内通过交互面板或命令完成。内置 `ADMIN_IDS` 严格白名单鉴权，对非管理员保持静默。
-- **多端存储目的地（Multi-Sink）**：
-  - `telegram`：支持目标群组、频道及 Forum Topic。优先采用免下载的**原生复制（Native Copy）**；当跨会话无法直接复制或需清洗剧透遮罩时，自动回退为**本地流式下载重传**，完整保留视频宽高与时长、音频标签、语音波形、原始文件名及安全缩略图，并支持相册（Album）整组聚合发送。
-  - `local`：结构化归档至容器挂载的本地目录（严格做 `ARCHIVE_ROOT` 路径越界防护，适配 NAS 本地盘）。
-  - `webdav`：支持公网 HTTPS 及内网 HTTP（如 `http://openlist:5244/dav`），提供**本地缓存落盘后上传（Spool）**与**零落盘流式直传（Zero-Disk Stream）**两种模式。
-- **长期监听与多路路由（Watch & Route）**：支持配置“单来源（可精确到 Topic）→ 多目的地”的持久化路由；支持新消息实时监听（相册自动凑齐整组）与水位线（Watermark）定时巡检，服务重启后自动补齐期间遗漏的消息。
-- **全媒体与消息形态覆盖**：纯文本、图片、视频、GIF 动图、音频、语音、圆形视频消息（Video Note）、通用文件、贴纸；投票与地理位置等特殊消息支持原生复制。
-- **超大文件智能分流**：自动识别普通账号/Bot（2000 MiB）与 Telegram Premium（4000 MiB）上传上限；支持配置由 Premium 读取账号代发 2–4 GiB 大文件，或自动将超限文件降级转存至绑定的本地 / WebDAV 备用目的地。
-- **多数据库引擎与配置便携**：基于 SQLAlchemy 2.0 异步 ORM，开箱即用支持 **SQLite**（默认），并可无缝切换至 **PostgreSQL** 或 **MySQL / MariaDB**；支持通过 `/export` 与 `/import` 进行 YAML 格式的全量配置备份与恢复。
-- **生产级稳健性与风控保护**：细粒度操作限速令牌桶、FloodWait 动态退避与抖动、账号风控异常自动熔断暂停并推送告警、磁盘最低剩余空间水位保护、中断任务一键恢复与失败项重试。
-- **智能代理分流**：支持 SOCKS5 / HTTP CONNECT 代理，内置内网地址识别与 DNS 解析校验，访问局域网或 Docker 内网 WebDAV 服务时自动绕过代理直连。
-
----
-
-## 快速开始（Docker 部署）
-
-> [!IMPORTANT]
-> **前置准备：所需 Telegram 凭据（用于填写 `.env`）**
-> 在启动服务前，请提前准备好以下三项凭据信息：
-> - **`API_ID` 与 `API_HASH`**：使用手机号登录 [my.telegram.org](https://my.telegram.org)，进入 **API development tools** 创建一个应用即可获取。
-> - **`BOT_TOKEN`**：在 Telegram 中私聊官方 [@BotFather](https://t.me/BotFather)，发送 `/newbot` 创建一个用于控制服务的 Bot 并获取其 Token。
-> - **`ADMIN_IDS`**：你个人的 Telegram 纯数字用户 ID（支持多个，用英文逗号分隔），可通过私聊 [@userinfobot](https://t.me/userinfobot) 等机器人查询获取。
-
-### 方式一：使用 Docker Hub 预构建镜像（推荐）
-
-官方多架构预构建镜像（支持 `linux/amd64` 与 `linux/arm64`）已发布于 Docker Hub：**[`boexoel/tg-migrator`](https://hub.docker.com/r/boexoel/tg-migrator)**。在服务器上仅需准备 [`docker-compose.yml`](../docker-compose.yml) 与 [`.env.example`](../.env.example)：
-
-```bash
-# 1. 复制并编辑环境变量配置（填入 API_ID / API_HASH / BOT_TOKEN / ADMIN_IDS）
+```sh
 cp .env.example .env
-
-# 2. 创建持久化目录并设置与 .env 中 PUID/PGID 一致的属主权限（默认 1000:1000）
-mkdir -p data sessions downloads archive
-sudo chown -R 1000:1000 data sessions downloads archive
-
-# 3. 拉取镜像并后台启动服务
+mkdir -p data sessions downloads archive && sudo chown -R 1000:1000 data sessions downloads archive
 docker compose pull && docker compose up -d
-docker compose logs -f
 ```
 
-### 方式二：本地源码构建启动
-
-如果你修改了源码希望在本地编译运行，只需取消 [`docker-compose.yml`](../docker-compose.yml) 中 `# build: .` 的注释并执行：
-
-```bash
-docker compose up -d --build
-```
-
----
-
-## 初始化与使用流程
-
-服务启动后，在 Telegram 中私聊你的 Bot：
-
-1. **打开主面板**：发送 `/start` 查看系统状态与交互菜单。
-2. **登录读取账号（Reader）**：
-   - 发送 `/login` 在 Bot 内按向导输入手机号，使用**内联数字键盘**输入验证码（避免明文验证码被聊天记录捕获），若开启了两步验证（2FA），Bot 读取密码后会立即自动删除该条密码消息。
-   - *备选方案*：也可在服务器终端执行交互式登录：`docker compose run --rm migrator login`。
-3. **配置目的地（Targets）**：
-   - **Telegram 群组 / 频道 / Topic**：将 Bot 加入目标会话并赋予发消息权限，直接在目标群组（或指定 Topic 内）发送 `/bind` 即可自动完成绑定；若在频道或以匿名管理员身份操作，可先私聊 Bot 发送 `/bind` 获取一次性绑定口令，再转发或粘贴至目标频道。
-   - **本地目录**：私聊发送 `/add_local` 按向导绑定子目录。
-   - **WebDAV 存储**：私聊发送 `/add_webdav` 按向导配置地址与凭据（创建时会自动执行 `MKCOL` / `PUT` / `DELETE` 读写连通性自检）。
-4. **下达一次性迁移任务**：
-   直接向 Bot 发送 Telegram 消息链接即可创建任务：
-   - 单条消息（相册会自动识别并整组迁移）：`https://t.me/c/1234567890/100`
-   - 消息范围（单条范围链接或一次发送首尾两条链接）：`https://t.me/c/1234567890/100-500`
-   - 指定 Forum Topic 消息：`https://t.me/c/1234567890/456/100`
-
----
-
-## 长期同步与实时监听路由
-
-发送 `/add_route` 按交互向导配置：**路由名称 → 来源会话（可选定特定 Topic） → 一个或多个目的地 ID → 是否开启实时监听**。
-
-- **实时触发 + 巡检兜底**：开启监听后，既会通过事件流实时捕获新消息（相册自动聚合），也会按 `watch.poll_interval_seconds` 周期以及在容器重启时，基于数据库水位线（`last_seen_msg_id`）自动扫描并补齐离线期间遗漏的消息。
-- **历史回溯**：发送 `/routes <ID>` 打开路由详情面板并点击「扫描历史」，即可将该路由来源的历史存量消息批量压入迁移队列。
-- **路由级独立配置**：支持针对单条路由覆盖全局设置，例如：
-  - `/route_set <路由ID> transfer.include.document true`
-  - `/route_unset <路由ID> transfer.include.document`
-
-> **注意**：请勿配置两条互为来源与目的地的路由，以免产生循环同步。
-
----
-
-## 归档目录结构（Local / WebDAV）
-
-文件与元数据默认采用扁平清晰的路径层级：
+在 Telegram 中私聊你的 Bot：
 
 ```text
-<来源名称_ID>/[topic_<ID>/][YYYY-MM/]<消息ID>_<原始文件名>
-<来源名称_ID>/[topic_<ID>/][YYYY-MM/]<消息ID>.json
+  /start                                  → 查看系统就绪状态与上手引导
+  /login                                  → 通过内联数字键盘安全登录读取账号
+  /bind                                   → 绑定目标群组、频道或 Forum 子话题
+  https://t.me/c/1234567890/100-500       → 直接回复目的地 ID 立即启动迁移
 ```
 
-- **智能省略冗余层级**：非 Forum Topic 消息不会生成 `topic_<ID>/` 目录；按月份分目录默认关闭（可通过 `/set archive.group_by_month true` 开启）。
-- **结构化元数据（Sidecar）**：纯文本消息与媒体的配文（Caption）默认生成同名 `.json` 元数据文件（包含消息 ID、原始时间戳、发送者、Topic、文本实体及关联文件列表）；可通过 `/set archive.sidecar_format md|both|none` 切换为 Markdown、双格式同时生成或不生成。
-- **目录命名策略**：支持通过 `archive.folder_naming` 选择 `title_id`（默认，如 `技术交流群_-100123456`）、`id` 或 `title`。
+**默认私密安全：** 只有列入 `ADMIN_IDS` 的管理员能获得 Bot 的 `/` 快捷指令菜单与响应，其他任何用户的消息都会被静默忽略。
 
----
+TG Migrator 免费开源。如果它帮到了你，欢迎[在 GitHub 上点个 Star](https://github.com/BoeXoel/tg-migrator)：能让更多自托管玩家发现它，也是对这个项目最大的鼓励。
 
-## 运行参数与在线配置
+## 为什么用 TG Migrator
 
-发送 `/config` 可调出可视化按钮面板（快速切换消息类型开关、传输策略、归档格式与过滤开关）；全部运行时参数支持通过 `/get [前缀]` 查询、`/set <配置项> <值>` 动态修改并持久化至数据库，无需重启容器。
+- **全程在 Telegram 内管控。** 无需额外暴露 Web 管理后台。防截获内联数字键盘登录、目的地绑定、监听路由管理、运行参数热更新全部在私聊窗口内完成。
+- **规模增长界面依然清爽。** 目的地（`/targets`）、路由（`/routes`）与任务（`/tasks`）均采用纯文本分页列表，配合 `/targets 1`、`/routes 2`、`/tasks 15` 直达单条目操作卡片，几百条任务也不会让按钮撑爆屏幕。
+- **原生多端存储（Multi-Sink）。** 支持路由至其他 Telegram 会话（可精确投递到指定 Forum 子话题）、本地 NAS 挂载目录（`ARCHIVE_ROOT`）或 WebDAV 存储（OpenList、Nextcloud 等），兼顾落盘缓存与零落盘流式直传。
+- **能免下载就原生复制，需重传也无损还原。** 条件允许时优先使用零流量原生复制；跨会话受限或需去除剧透遮罩时自动回退为流式下载重传，完整保留视频宽高时长、音频标签、语音波形、原始文件名及相册（Album）整组聚合。
+- **实时监听 + 水位线自动补齐。** 事件监听实时捕获新消息并自动凑齐相册，同时基于数据库 `last_seen_msg_id` 水位线定时巡检，容器重启或网络闪断后自动补齐离线期间遗漏的消息。
+- **专为账号防风控设计。** 多任务公平轮询（Round-Robin）并发调度、读写传独立限速锁、批次冷却休眠、FloodWait 动态退避抖动，触发账号限制时自动熔断暂停并推送告警。
 
-| 配置项 | 默认值 | 说明 |
+## 适合用来
+
+- 把分散在多个群组、频道里的资料按分类汇总到一个开启了子话题（Topics）的私人群组；
+- 将媒体、文档以及结构化 `.json` / `.md` 元数据自动归档到家里的 NAS 或 OpenList / Nextcloud 等 WebDAV 网盘；
+- 7×24 小时将某个来源群组（或指定子话题）的新消息实时镜像分发到多个目的地；
+- 自动将超过 `2000 MiB` 的超大文件降级分流至绑定的本地 / WebDAV 备用目的地（或交由已登录的 Premium 账号上传 `2–4 GiB` 文件）；
+- 在 SQLite、PostgreSQL 或 MySQL 之间自由切换，通过 `/export` 与 `/import` 一键备份和恢复 YAML 配置。
+
+## 用法
+
+在私聊窗口直接向 Bot 发送消息链接或命令：
+
+```text
+<单条消息链接>                      https://t.me/c/1234567890/100
+<消息范围链接>                      https://t.me/c/1234567890/100-500
+<指定子话题消息链接>                https://t.me/c/1234567890/456/100
+
+  /start, /help                     系统就绪概览与完整命令字典
+  /login, /logout                   登录或登出 Telegram 读取账号
+  /bind                             绑定 Telegram 群组、频道或 Forum 子话题
+  /add_local, /add_webdav           新增本地 NAS 目录或 WebDAV 存储目的地
+  /targets [ID]                     分页查看目的地列表，或管理指定 #<ID> 目的地
+  /add_route, /routes [ID]          创建实时监听路由，或管理指定 #<ID> 路由
+  /tasks [ID], /status              分页查看任务队列，或查看/取消 #<ID> 任务
+  /pause, /resume, /retry [ID]      暂停/恢复全局队列，或重试失败的消息项
+  /config, /get, /set <键> <值>     交互式参数面板，或在线热更新配置项
+  /filters                          管理关键词/正则黑白名单与媒体类型过滤
+  /export [secrets], /import        导出或原子化导入 YAML 配置备份
+  /lang                             一键切换中英文界面（简体中文 / English）
+```
+
+粘贴消息链接后，Bot 会列出当前已启用的目的地编号。直接回复目的地 ID（如 `1` 或 `1, 2`）即可立即启动任务。
+
+### 超大文件与降级分流
+
+- 普通 Telegram 账号与 Bot 单文件上传上限为 `2000 MiB`（Telegram Premium 为 `4000 MiB`）。
+- 发送 `/targets <ID>` 打开任意 Telegram 目的地详情，可为其绑定一个**本地或 WebDAV 超大文件降级目的地**；也可开启 `/set transfer.allow_premium_user_fallback true`，让已登录的 Premium 读取账号代为上传 `2–4 GiB` 文件。
+- 下载暂存区始终受 `downloads.min_free_bytes`（默认保留 `5 GiB` 可用空间）水位保护，防止大批量任务撑满宿主机磁盘。
+
+## 工作原理
+
+```text
+                                                               ┌──▶ Telegram 群组 / 频道 / 子话题
+来源会话 / 子话题 ──▶ 读取账号 / Bot ──▶ 公平轮询队列与限速器 ─┼──▶ 本地 NAS 目录 (ARCHIVE_ROOT)
+                                                               └──▶ WebDAV 存储 (OpenList / Nextcloud)
+```
+
+TG Migrator 在单个非 root 容器内协同运行两个 Telethon 会话：**Bot 客户端**负责交互控制与常规投递，可选的**个人读取账号（Reader）**负责读取已加入的私有群组及处理 `2–4 GiB` Premium 上传。历史迁移任务与实时监听路由通过公平轮询（Round-Robin）交错调度，`read`、`download`、`upload`、`copy` 四类操作拥有各自独立的限速锁，互不阻塞。
+
+关于 Docker 部署、子话题绑定、WebDAV 流式模式、数据库切换与内网代理分流的完整指南，请参阅<a href="https://tg-migrator.isgay.top/zh/" target="_blank" rel="noopener noreferrer">在线文档</a>。
+
+## 常见问题
+
+部署与日常使用中最常见的现象及处理方式：
+
+| 现象或报错 | 原因 | 解决办法 |
 | --- | --- | --- |
-| `ui.language` | `en` | Bot 界面语言：`en`（英文）或 `zh`（简体中文），初始默认值取自 `.env` 中的 `BOT_LANG` |
-| `transfer.hide_sender` | `true` | 原生复制消息时隐藏原发送者引用头 |
-| `transfer.native_copy` / `native_only` | `true` / `false` | 优先使用免下载原生复制 / 仅允许原生复制（需读取账号同样具备目标群写入权限） |
-| `transfer.strip_spoilers` | `true` | 自动去除媒体剧透遮罩（开启后含遮罩媒体将通过下载重传去除标记） |
-| `transfer.allow_premium_user_fallback` | `false` | 当文件处于 2–4 GiB 区间时，允许使用已登录的 Premium 读取账号代为上传 |
-| `archive.webdav_mode` | `auto` | `auto`（本地空间充足时先落盘，不足时自动转流式）、`stream`（强制零落盘流式直传）、`spool`（强制先落盘） |
-| `archive.sidecar_format` | `json` | 文本与配文元数据格式：`json` / `md` / `both` / `none` |
-| `archive.group_by_month` | `false` | 是否在归档路径中增加 `YYYY-MM/` 月份目录层 |
-| `worker.batch_size` / `pause_between_batches_seconds` | `50` / `120` | 每批次连续处理的任务项数及批次间冷却秒数，平滑请求曲线以降低账号风控概率 |
-| `downloads.min_free_bytes` | `5368709120` (5 GiB) | 下载暂存目录最低保留可用空间水位线 |
-| `limits.*` | — | 各类 MTProto 操作的最小间隔与 FloodWait 退避上限 |
+| `PermissionError: '/app/data/secret.key'` | 宿主机挂载目录属主为 `root`，而容器以 `1000:1000` 运行 | 执行 `sudo chown -R 1000:1000 data sessions downloads archive` |
+| `could not translate host name "postgres"` | `.env` 填写了 `postgres` 地址但未启用数据库 Profile | 用 SQLite 请注释掉 `DATABASE_URL`；用 PG 请执行 `docker compose --profile postgres up -d` |
+| 给 Bot 发 `/start` 无任何响应 | 当前 Telegram 账号未列入 `ADMIN_IDS` 白名单 | 将你的纯数字用户 ID 填入 `.env` 的 `ADMIN_IDS` 并重启容器 |
+| `ChatAdminRequiredError` / `Topic closed` | Bot 在目标群缺少发消息或管理话题权限 | 在目标群赋予 Bot「发布消息」与「管理话题」管理员权限 |
+| `FILE_TOO_BIG`（`> 2000 MiB`） | 单文件超过普通 Bot 上传体积上限 | 在 `/targets <ID>` 中绑定本地/WebDAV 降级目的地，或开启 Premium 代传 |
 
----
+## 参与开发
 
-## YAML 备份与恢复
+欢迎提交 Issue 和 Pull Request，详见 [CONTRIBUTING.md](../CONTRIBUTING.md)。
 
-- **导出备份**：发送 `/export` 导出当前全部设置、目的地、监听路由与过滤规则的 `.yaml` 文件（WebDAV 密码默认脱敏为 `<REDACTED>`）；发送 `/export secrets` 可导出含明文密码的完整备份（请妥善保管）。
-- **导入恢复**：
-  - **合并模式（默认）**：直接向 Bot 发送 `.yaml` 文件，按名称/配置增量合并更新。
-  - **全量替换模式**：先发送 `/import replace`，再发送 `.yaml` 文件，将全量同步并清理备份中不存在的旧目的地与路由。
-  - 导入过程具备事务级预校验，格式或字段校验不通过时不会改动现有数据库；若导入文件中密码为 `<REDACTED>`，会自动保留数据库中已有的加密密码。
+## 合规声明
 
----
+本项目仅作为个人自托管的数据备份、群组迁移与知识归档工具提供，旨在帮助用户整理和保存**自身拥有合法访问权限**的社群消息与媒体资料。请严格遵守所在地区法律法规、知识产权规定及 <a href="https://telegram.org/tos" target="_blank" rel="noopener noreferrer">Telegram 服务条款</a>。
 
-## 多数据库配置
+## License
 
-在 `.env` 中通过 `DATABASE_URL` 指定数据库后端（留空则默认使用 `./data/migrator.db` SQLite 数据库）：
-
-```env
-# SQLite（默认，零外部依赖）
-DATABASE_URL=
-
-# PostgreSQL
-DATABASE_URL=postgresql+asyncpg://migrator:your_password@postgres:5432/migrator
-
-# MySQL / MariaDB
-DATABASE_URL=mysql+aiomysql://migrator:your_password@mysql:3306/migrator
-```
-
-[`docker-compose.yml`](../docker-compose.yml) 内置了可选的数据库服务 Profile，可按需一键启用（启用前请先在 `.env` 中设置 `POSTGRES_PASSWORD` 或 `MYSQL_PASSWORD`）：
-
-```bash
-docker compose --profile postgres up -d
-# 或
-docker compose --profile mysql up -d
-```
-
----
-
-## 代理与内网直连分流
-
-在 `.env` 中配置代理（为防止在 Bot 内误操作导致服务与 Telegram 失联，代理参数仅通过环境变量管理）：
-
-```env
-PROXY_URL=socks5://user:pass@proxy.example:1080
-PROXY_APPLY_TO=telegram,webdav
-NO_PROXY=nas.local,203.0.113.0/24
-PROXY_BYPASS_RESOLVE=true
-```
-
-- **严格代理策略**：启用 Telegram 代理后，若代理不可用将直接报错并等待恢复，不会静默回退为直连，防止暴露宿主机真实 IP。
-- **内网 WebDAV 自动直连**：访问以下目标时会自动绕过代理直连：
-  - `localhost` 及环回地址（`127.0.0.0/8`、`::1`）
-  - 私有与保留网段（`10.0.0.0/8`、`172.16.0.0/12`、`192.168.0.0/16`、`169.254.0.0/16`、`100.64.0.0/10` CGNAT/Tailscale、IPv6 ULA/Link-Local）
-  - 单标签主机名（如 Docker Compose 内部服务名 `openlist`、`nextcloud`）
-  - `.local` / `.lan` / `.internal` / `.home.arpa` 域名及 `NO_PROXY` 列表
-  - 当 `PROXY_BYPASS_RESOLVE=true`（默认）时，DNS 解析结果为上述内网 IP 的自定义域名同样自动直连。
-
----
-
-## 安全架构说明
-
-- **供应链与依赖安全**：仅采用主流官方活跃维护的上游库（Telethon、SQLAlchemy、httpx、cryptography 等）；[`requirements.txt`](../requirements.txt) 全量锁定 SHA256 哈希，容器构建启用 `--require-hashes --only-binary=:all:`，拒绝执行不受信任的第三方构建脚本。
-- **凭据加密与权限收敛**：
-  - WebDAV 凭据在数据库中使用基于 `SECRET_KEY`（或自动持久化于 `data/secret.key`）的 Fernet 对称加密存储。
-  - Telethon 会话文件（`sessions/`）与密钥文件在创建时强制收敛为 `0600` 权限。
-  - 日志输出自动脱敏 Bot Token 及 URL 中的账号密码；内容过滤器命中时仅记录规则编号，不将敏感原文写入日志。
-- **容器运行时加固**：容器默认以非特权用户（UID/GID 1000）运行，启用只读根文件系统（`read_only: true`）、禁止提权（`no-new-privileges:true`）并丢弃全部 Linux Capabilities（`cap_drop: ALL`）。
-
----
-
-## Bot 命令速查表
-
-| 类别 | 命令 | 说明 |
-| --- | --- | --- |
-| **状态与任务** | `/start` `/help` `/status` `/tasks [ID]` | 打开主菜单、完整命令速查、查看系统实时运行状态与任务 |
-| **任务控制** | `/pause` `/resume` `/recover` | 暂停队列、恢复队列、恢复异常中断的任务 |
-| **重试与取消** | `/retry [任务ID]` `/cancel_task <ID>` | 重新排队失败的消息项、取消指定运行中任务 |
-| **目的地管理** | `/targets [ID]` `/bind` `/add_tg` `/add_local` `/add_webdav` | 查看、管理单条目详情、绑定、新增或测试各类存储目的地 |
-| **路由与监听** | `/routes [ID]` `/add_route` `/route_set` `/route_unset` | 管理长期同步路由、历史扫描与路由级参数覆盖 |
-| **系统配置** | `/config` `/lang` `/get [前缀]` `/set <键> <值>` | 可视化配置面板、一键切换中英语言、查询或在线修改运行时参数 |
-| **内容过滤** | `/filters` `/filter_add` `/filter_del` `/filter_toggle` | 管理关键词/正则表达式黑白名单与媒体类型过滤 |
-| **备份与维护** | `/export [secrets]` `/import [replace]` | 导出或导入 YAML 配置文件 |
-| **校验与报表** | `/verify <任务ID>` `/report [任务ID]` | 抽样校验目标端已投递消息完整性、导出超大未传文件 CSV 报表 |
-| **会话管理** | `/login` `/logout` `/cancel` | 登录或登出 Telegram 读取账号、中止当前交互向导 |
-
----
-
-## 开发与测试
-
-```bash
-# 重新生成带 SHA256 哈希的依赖锁定文件（目标环境 Python 3.12）
-uv pip compile --python-version 3.12 --generate-hashes requirements.in -o requirements.txt
-uv pip compile --python-version 3.12 --generate-hashes requirements-dev.in -o requirements-dev.txt
-
-# 在与生产一致的容器环境内运行完整单元测试套件
-docker build --target test -t tg-migrator:test . && docker run --rm tg-migrator:test
-```
-
----
-
-## 合规与免责声明（Disclaimer）
-
-1. 本项目仅作为个人自托管的数据备份、群组迁移与知识归档工具提供，旨在帮助用户整理和持久化保存**自身拥有合法访问与使用权限**的社群消息与媒体资料。
-2. 请严格遵守所在国家/地区的法律法规、知识产权与版权保护规定，以及 [Telegram 服务条款（Terms of Service）](https://telegram.org/tos) 与 [Telegram API 使用规范](https://core.telegram.org/api/terms)。
-3. 请尊重原创内容创作者的合法权益，切勿将本工具用于未经授权的商业分发、侵犯他人版权或违反社群规则的行为。使用者因不当使用本工具所产生的一切账号风控或法律责任均由使用者自行承担，项目作者不承担任何连带责任。
-
----
-
-## 开源协议（License）
-
-本项目基于 **[GNU Affero General Public License v3.0 (AGPL-3.0)](../LICENSE)** 协议开源。
-
-- 你可以自由地获取、使用、修改和分发本项目的源代码；
-- 若你对本项目进行了修改，或基于本项目通过网络（包括通过 Telegram Bot 接口）向第三方提供服务，你**必须**遵循 AGPL-3.0 协议要求，将完整修改后的源代码以相同协议向用户免费公开；
-- 未经作者另行书面商业授权，禁止将本项目或其衍生版本闭源用于商业售卖或付费托管服务。
+[AGPL-3.0](../LICENSE)

@@ -5,7 +5,7 @@ All notable changes to this project will be documented in this file.
 The format is based on [Keep a Changelog](https://keepachangelog.com/en/1.1.0/),
 and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0.html).
 
-## [0.0.4] - 2026-11-09
+## [1.0.0] - 2026-11-09
 
 ### Added
 - **Admin-Scoped Bot Command Autocomplete Menu**: Automatically registers localized `/` command menus (`en` / `zh`) exclusively for user IDs in `ADMIN_IDS` via `BotCommandScopePeer` while clearing the global `BotCommandScopeDefault` menu so unauthorized users see no commands.
@@ -14,7 +14,10 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 ### Changed
 - **De-Bloated Paginated Bot Console (`PAGE_SIZE = 10`)**: Replaced per-item inline button grids in `/targets`, `/routes`, `/tasks`, and `/filters` with clean paginated text lists (`⬅️ Prev` / `📄 X/Y` / `Next ➡️`) so the Bot UI remains compact regardless of how many destinations, routes, or tasks exist.
 - **Reply-ID Target Selection for Message Links**: Sending a Telegram message link now displays a paginated text list of enabled targets and launches the migration task immediately when the admin replies with target ID(s) (e.g. `1` or `1, 2`).
-- **Documentation Site Branding & Refinement**: Added custom site logo and SVG favicon, dynamic copyright year in the VitePress footer, objective third-person FAQ tone, and standardized WebDAV examples on OpenList.
+- **Documentation Site & README Overhaul**: Added custom site logo and SVG favicon, dynamic copyright year in the VitePress footer, objective third-person FAQ tone, standardized WebDAV examples on OpenList, and redesigned the bilingual `README` with a centered hero header, ASCII architecture diagram, and quick-reference layout.
+
+### Fixed
+- **Documentation Homepage `MutationObserver` Freeze**: Guarded the dynamic footer copyright year script in `docs/.vitepress/config.mts` so it only writes to the DOM when the year string actually changes, eliminating an infinite microtask loop on `layout: home` pages.
 
 ## [0.0.3] - 2026-11-07
 

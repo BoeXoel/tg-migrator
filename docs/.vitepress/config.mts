@@ -21,8 +21,11 @@ export default defineConfig({
         const updateYear = () => {
           const year = String(new Date().getFullYear());
           document.querySelectorAll('.VPFooter .copyright').forEach((el) => {
-            if (el.textContent) {
-              el.textContent = el.textContent.replace(/©\\s*\\d{4}/, '© ' + year);
+            const text = el.textContent;
+            if (!text) return;
+            const next = text.replace(/©\\s*\\d{4}/, '© ' + year);
+            if (next !== text) {
+              el.textContent = next;
             }
           });
         };
