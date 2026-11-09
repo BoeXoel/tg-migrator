@@ -4,11 +4,11 @@
   <p><strong>Your Telegram chats, archived and routed anywhere.</strong></p>
   <p>Send a message link to your Bot to migrate or mirror chats into Telegram Topics, local NAS, or WebDAV.<br />Self-hosted, open source, controlled entirely from Telegram.</p>
   <p>
-    <a href="https://hub.docker.com/r/boexoel/tg-migrator"><img src="https://img.shields.io/docker/v/boexoel/tg-migrator?sort=semver&color=0284c7&label=docker" alt="Docker version" /></a>
+    <a href="https://hub.docker.com/r/boexoel/tg-migrator" target="_blank" rel="noopener noreferrer"><img src="https://img.shields.io/docker/v/boexoel/tg-migrator?sort=semver&color=0284c7&label=docker" alt="Docker version" /></a>
     <a href="./LICENSE"><img src="https://img.shields.io/github/license/BoeXoel/tg-migrator?color=52525b" alt="AGPL-3.0 license" /></a>
     <a href="https://github.com/BoeXoel/tg-migrator/stargazers"><img src="https://img.shields.io/github/stars/BoeXoel/tg-migrator?style=flat&color=52525b" alt="GitHub stars" /></a>
   </p>
-  <p><a href="https://tg-migrator.isgay.top/">Documentation</a> · <a href="https://hub.docker.com/r/boexoel/tg-migrator">Docker Hub</a> · <a href="./docs/README.zh-CN.md">简体中文</a></p>
+  <p><a href="https://tg-migrator.isgay.top/" target="_blank" rel="noopener noreferrer">Documentation</a> · <a href="https://hub.docker.com/r/boexoel/tg-migrator" target="_blank" rel="noopener noreferrer">Docker Hub</a> · <a href="./docs/README.zh-CN.md">简体中文</a></p>
 </div>
 
 ## Quick start
@@ -92,7 +92,7 @@ Source Chat / Topic ──▶ Reader / Bot ──▶ Fair Queue & Limiter ─┼
 
 TG Migrator runs two coordinated Telethon sessions inside a single non-root container: a **Bot client** for interactive control and standard deliveries, and an optional **Reader account** for reading joined private chats and handling `2–4 GiB` Premium uploads. Tasks and live-watch routes are interleaved in fair round-robin waves with independent rate-limit locks for `read`, `download`, `upload`, and `copy`.
 
-Full guides for Docker deployment, Forum Topic binding, WebDAV modes, database profiles, and proxy rules are in the [Documentation](https://tg-migrator.isgay.top/).
+Full guides for Docker deployment, Forum Topic binding, WebDAV modes, database profiles, and proxy rules are in the <a href="https://tg-migrator.isgay.top/" target="_blank" rel="noopener noreferrer">Documentation</a>.
 
 ## Troubleshooting
 
@@ -112,7 +112,7 @@ Issues and pull requests are welcome. See [CONTRIBUTING.md](./CONTRIBUTING.md).
 
 ## Disclaimer
 
-This project is a self-hosted personal backup and archiving tool intended strictly for organizing messages and media that **you already have legitimate permission to access**. Users must comply with local laws, copyright regulations, and the [Telegram Terms of Service](https://telegram.org/tos).
+This project is a self-hosted personal backup and archiving tool intended strictly for organizing messages and media that **you already have legitimate permission to access**. Users must comply with local laws, copyright regulations, and the <a href="https://telegram.org/tos" target="_blank" rel="noopener noreferrer">Telegram Terms of Service</a>.
 
 ## License
 

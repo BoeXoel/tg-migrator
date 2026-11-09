@@ -4,11 +4,11 @@
   <p><strong>你的 Telegram 消息，随处归档与多端路由。</strong></p>
   <p>给你的 Bot 发一条消息链接，即可将群组、频道或子话题同步归档至 Telegram、本地 NAS 或 WebDAV。<br />自托管、开源、全程在 Telegram 内交互管控。</p>
   <p>
-    <a href="https://hub.docker.com/r/boexoel/tg-migrator"><img src="https://img.shields.io/docker/v/boexoel/tg-migrator?sort=semver&color=0284c7&label=docker" alt="Docker version" /></a>
+    <a href="https://hub.docker.com/r/boexoel/tg-migrator" target="_blank" rel="noopener noreferrer"><img src="https://img.shields.io/docker/v/boexoel/tg-migrator?sort=semver&color=0284c7&label=docker" alt="Docker version" /></a>
     <a href="../LICENSE"><img src="https://img.shields.io/github/license/BoeXoel/tg-migrator?color=52525b" alt="AGPL-3.0 license" /></a>
     <a href="https://github.com/BoeXoel/tg-migrator/stargazers"><img src="https://img.shields.io/github/stars/BoeXoel/tg-migrator?style=flat&color=52525b" alt="GitHub stars" /></a>
   </p>
-  <p><a href="https://tg-migrator.isgay.top/zh/">文档</a> · <a href="https://hub.docker.com/r/boexoel/tg-migrator">Docker Hub</a> · <a href="../README.md">English</a></p>
+  <p><a href="https://tg-migrator.isgay.top/zh/" target="_blank" rel="noopener noreferrer">文档</a> · <a href="https://hub.docker.com/r/boexoel/tg-migrator" target="_blank" rel="noopener noreferrer">Docker Hub</a> · <a href="../README.md">English</a></p>
 </div>
 
 ## 快速开始
@@ -92,7 +92,7 @@ TG Migrator 免费开源。如果它帮到了你，欢迎[在 GitHub 上点个 S
 
 TG Migrator 在单个非 root 容器内协同运行两个 Telethon 会话：**Bot 客户端**负责交互控制与常规投递，可选的**个人读取账号（Reader）**负责读取已加入的私有群组及处理 `2–4 GiB` Premium 上传。历史迁移任务与实时监听路由通过公平轮询（Round-Robin）交错调度，`read`、`download`、`upload`、`copy` 四类操作拥有各自独立的限速锁，互不阻塞。
 
-关于 Docker 部署、子话题绑定、WebDAV 流式模式、数据库切换与内网代理分流的完整指南，请参阅[在线文档](https://tg-migrator.isgay.top/zh/)。
+关于 Docker 部署、子话题绑定、WebDAV 流式模式、数据库切换与内网代理分流的完整指南，请参阅<a href="https://tg-migrator.isgay.top/zh/" target="_blank" rel="noopener noreferrer">在线文档</a>。
 
 ## 常见问题
 
@@ -112,7 +112,7 @@ TG Migrator 在单个非 root 容器内协同运行两个 Telethon 会话：**Bo
 
 ## 合规声明
 
-本项目仅作为个人自托管的数据备份、群组迁移与知识归档工具提供，旨在帮助用户整理和保存**自身拥有合法访问权限**的社群消息与媒体资料。请严格遵守所在地区法律法规、知识产权规定及 [Telegram 服务条款](https://telegram.org/tos)。
+本项目仅作为个人自托管的数据备份、群组迁移与知识归档工具提供，旨在帮助用户整理和保存**自身拥有合法访问权限**的社群消息与媒体资料。请严格遵守所在地区法律法规、知识产权规定及 <a href="https://telegram.org/tos" target="_blank" rel="noopener noreferrer">Telegram 服务条款</a>。
 
 ## License
 
