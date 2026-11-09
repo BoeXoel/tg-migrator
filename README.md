@@ -84,7 +84,7 @@ Once the container is running, open a private chat with your Bot in Telegram:
 Send `/add_route` to launch the interactive wizard: **Route Name → Source Chat (optional Topic ID) → One or more Target IDs → Enable Real-Time Watch**.
 
 - **Real-Time Events + Watermark Catch-Up**: When watching is enabled, new messages are captured in real time (with Album aggregation) and periodically checked every `watch.poll_interval_seconds` (as well as on startup) against the stored `last_seen_msg_id` watermark to backfill any messages missed during downtime.
-- **Historical Backfill**: Click **"Scan History"** in the `/routes` detail panel to enqueue existing historical messages from the route's source.
+- **Historical Backfill**: Send `/routes <id>` and click **"Scan History"** in the route detail panel to enqueue existing historical messages from the route's source.
 - **Per-Route Overrides**: Override global settings for a specific route:
   - `/route_set <route_id> transfer.include.document true`
   - `/route_unset <route_id> transfer.include.document`
@@ -122,7 +122,7 @@ Send `/config` to open the interactive button panel (toggle media types, transfe
 | `archive.webdav_mode` | `auto` | `auto` (spool when disk space suffices, stream otherwise), `stream` (zero-disk streaming), `spool` (disk spooling) |
 | `archive.sidecar_format` | `json` | Metadata sidecar format: `json` / `md` / `both` / `none` |
 | `archive.group_by_month` | `false` | Group archived files into `YYYY-MM/` monthly folders |
-| `worker.batch_size` / `pause_between_batches_seconds` | `25` / `600` | Items processed per batch and cooldown pause between batches to reduce flood/restriction risk |
+| `worker.batch_size` / `pause_between_batches_seconds` | `50` / `120` | Items processed per batch and cooldown pause between batches to reduce flood/restriction risk |
 | `downloads.min_free_bytes` | `5368709120` (5 GiB) | Minimum free disk space maintained in the downloads directory |
 | `limits.*` | — | Per-operation minimum intervals and FloodWait backoff thresholds |
 
@@ -199,11 +199,11 @@ PROXY_BYPASS_RESOLVE=true
 
 | Category | Commands | Description |
 | --- | --- | --- |
-| **Status & Tasks** | `/start` `/status` `/tasks` | Open main menu, view live runtime status and recent tasks |
+| **Status & Tasks** | `/start` `/help` `/status` `/tasks [id]` | Open main menu, command reference, view live runtime status and tasks |
 | **Queue Control** | `/pause` `/resume` `/recover` | Pause worker queue, resume queue, recover interrupted tasks |
 | **Retry & Cancel** | `/retry [task_id]` `/cancel_task <id>` | Re-queue failed items, cancel an active task |
-| **Targets** | `/targets` `/bind` `/add_tg` `/add_local` `/add_webdav` | List, bind, add, or test storage destinations |
-| **Watch Routes** | `/routes` `/add_route` `/route_set` `/route_unset` | Manage continuous routes, historical scans, and per-route overrides |
+| **Targets** | `/targets [id]` `/bind` `/add_tg` `/add_local` `/add_webdav` | List, inspect, bind, add, or test storage destinations |
+| **Watch Routes** | `/routes [id]` `/add_route` `/route_set` `/route_unset` | Manage continuous routes, historical scans, and per-route overrides |
 | **Configuration** | `/config` `/lang` `/get [prefix]` `/set <key> <value>` | Interactive settings UI, switch language (`en`/`zh`), query or live-update runtime parameters |
 | **Content Filters** | `/filters` `/filter_add` `/filter_del` `/filter_toggle` | Manage keyword/regex allowlists/blocklists and media filters |
 | **Backup & Restore** | `/export [secrets]` `/import [replace]` | Export or import YAML configuration backups |

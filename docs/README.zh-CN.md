@@ -84,7 +84,7 @@ docker compose up -d --build
 发送 `/add_route` 按交互向导配置：**路由名称 → 来源会话（可选定特定 Topic） → 一个或多个目的地 ID → 是否开启实时监听**。
 
 - **实时触发 + 巡检兜底**：开启监听后，既会通过事件流实时捕获新消息（相册自动聚合），也会按 `watch.poll_interval_seconds` 周期以及在容器重启时，基于数据库水位线（`last_seen_msg_id`）自动扫描并补齐离线期间遗漏的消息。
-- **历史回溯**：在 `/routes` 路由详情面板中点击「扫描历史」，即可将该路由来源的历史存量消息批量压入迁移队列。
+- **历史回溯**：发送 `/routes <ID>` 打开路由详情面板并点击「扫描历史」，即可将该路由来源的历史存量消息批量压入迁移队列。
 - **路由级独立配置**：支持针对单条路由覆盖全局设置，例如：
   - `/route_set <路由ID> transfer.include.document true`
   - `/route_unset <路由ID> transfer.include.document`
@@ -122,7 +122,7 @@ docker compose up -d --build
 | `archive.webdav_mode` | `auto` | `auto`（本地空间充足时先落盘，不足时自动转流式）、`stream`（强制零落盘流式直传）、`spool`（强制先落盘） |
 | `archive.sidecar_format` | `json` | 文本与配文元数据格式：`json` / `md` / `both` / `none` |
 | `archive.group_by_month` | `false` | 是否在归档路径中增加 `YYYY-MM/` 月份目录层 |
-| `worker.batch_size` / `pause_between_batches_seconds` | `25` / `600` | 每批次连续处理的任务项数及批次间冷却秒数，平滑请求曲线以降低账号风控概率 |
+| `worker.batch_size` / `pause_between_batches_seconds` | `50` / `120` | 每批次连续处理的任务项数及批次间冷却秒数，平滑请求曲线以降低账号风控概率 |
 | `downloads.min_free_bytes` | `5368709120` (5 GiB) | 下载暂存目录最低保留可用空间水位线 |
 | `limits.*` | — | 各类 MTProto 操作的最小间隔与 FloodWait 退避上限 |
 
@@ -199,11 +199,11 @@ PROXY_BYPASS_RESOLVE=true
 
 | 类别 | 命令 | 说明 |
 | --- | --- | --- |
-| **状态与任务** | `/start` `/status` `/tasks` | 打开主菜单、查看系统实时运行状态与最近任务列表 |
+| **状态与任务** | `/start` `/help` `/status` `/tasks [ID]` | 打开主菜单、完整命令速查、查看系统实时运行状态与任务 |
 | **任务控制** | `/pause` `/resume` `/recover` | 暂停队列、恢复队列、恢复异常中断的任务 |
 | **重试与取消** | `/retry [任务ID]` `/cancel_task <ID>` | 重新排队失败的消息项、取消指定运行中任务 |
-| **目的地管理** | `/targets` `/bind` `/add_tg` `/add_local` `/add_webdav` | 查看、绑定、新增或测试各类存储目的地 |
-| **路由与监听** | `/routes` `/add_route` `/route_set` `/route_unset` | 管理长期同步路由、历史扫描与路由级参数覆盖 |
+| **目的地管理** | `/targets [ID]` `/bind` `/add_tg` `/add_local` `/add_webdav` | 查看、管理单条目详情、绑定、新增或测试各类存储目的地 |
+| **路由与监听** | `/routes [ID]` `/add_route` `/route_set` `/route_unset` | 管理长期同步路由、历史扫描与路由级参数覆盖 |
 | **系统配置** | `/config` `/lang` `/get [前缀]` `/set <键> <值>` | 可视化配置面板、一键切换中英语言、查询或在线修改运行时参数 |
 | **内容过滤** | `/filters` `/filter_add` `/filter_del` `/filter_toggle` | 管理关键词/正则表达式黑白名单与媒体类型过滤 |
 | **备份与维护** | `/export [secrets]` `/import [replace]` | 导出或导入 YAML 配置文件 |
