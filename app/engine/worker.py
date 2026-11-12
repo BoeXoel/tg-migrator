@@ -4,6 +4,7 @@ from __future__ import annotations
 
 import asyncio
 import logging
+import random
 from dataclasses import dataclass, field
 from datetime import datetime, timedelta
 from typing import Any
@@ -36,6 +37,7 @@ from app.telegram.errors_map import (
     ACCOUNT_RESTRICTED_ERRORS,
     AUTH_LOST_ERRORS,
     BAD_REQUEST_ERRORS,
+    FLOOD_WAIT_ERRORS,
     PEER_INVALID_ERRORS,
     PERMISSION_ERRORS,
     RETRYABLE_TELEGRAM_ERRORS,
@@ -336,6 +338,14 @@ class Worker:
             if exc.reason_code in {"disk_low", "disk_full"}:
                 msg = f"💾 磁盘空间不足，任务已推迟：{exc}" if lang == "zh" else f"💾 Low disk space; job deferred: {exc}"
                 await self.notifier.notify(msg, key="disk")
+            return
+        if isinstance(exc, FLOOD_WAIT_ERRORS):
+            raw_seconds = max(1, int(getattr(exc, "seconds", 60) or 60))
+            low = min(settings.limits.floodwait_extra_min_seconds, settings.limits.floodwait_extra_max_seconds)
+            high = max(settings.limits.floodwait_extra_min_seconds, settings.limits.floodwait_extra_max_seconds)
+            wait = raw_seconds + random.randint(low, high)
+            await self.repo.defer_job(job.id, error, reason_code="flood_wait", retry_after_seconds=wait)
+            log.warning("Job %s deferred %ss due to Telegram flood wait: %s", job.id, wait, error)
             return
         if isinstance(exc, PermanentJobError):
             await self.repo.mark_skipped(job.id, error, reason_code=exc.reason_code or "permanent")

@@ -8,10 +8,9 @@ import random
 import time
 from typing import Any, Awaitable, Callable
 
-from telethon import errors
-
 from app.errors import FloodWaitDeferred
 from app.settings_store import SettingsStore
+from app.telegram.errors_map import FLOOD_WAIT_ERRORS
 
 log = logging.getLogger("migrator.limiter")
 
@@ -54,7 +53,7 @@ class TelegramLimiter:
                 await self.wait(operation)
             try:
                 return await fn(*args, **kwargs)
-            except (errors.FloodWaitError, errors.SlowModeWaitError) as exc:
+            except FLOOD_WAIT_ERRORS as exc:
                 await self._handle_flood(int(getattr(exc, "seconds", 60) or 60))
 
     async def _handle_flood(self, seconds: int) -> None:

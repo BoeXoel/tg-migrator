@@ -102,8 +102,23 @@ class ClientManager:
         self._entity_cache: dict[tuple[int, str], Any] = {}
         self._dialogs_loaded: set[int] = set()
         self._reader_callbacks: list[Callable[[], Awaitable[None]]] = []
+        store = getattr(self.limiter, "store", None)
+        if store is not None and hasattr(store, "subscribe"):
+            store.subscribe(self._sync_flood_threshold)
 
     # ---------------------------------------------------------------- factory
+
+    def _flood_sleep_threshold(self) -> int:
+        store = getattr(self.limiter, "store", None)
+        if store is None:
+            return 60
+        return max(0, int(store.current.limits.floodwait_defer_after_seconds))
+
+    def _sync_flood_threshold(self, settings: Any) -> None:
+        threshold = max(0, int(settings.limits.floodwait_defer_after_seconds))
+        for client in (self.bot, self.reader):
+            if client is not None:
+                client.flood_sleep_threshold = threshold
 
     def session_path(self, name: str) -> Path:
         return self.boot.sessions_dir / f"{name}.session"
@@ -114,8 +129,12 @@ class ClientManager:
             self.boot.api_id,
             self.boot.api_hash,
             proxy=self.boot.proxy.telethon_proxy(),
-            # FloodWaits are handled (with jitter/deferral) by TelegramLimiter.
-            flood_sleep_threshold=0,
+            # Allow chunk loops (GetFileRequest / SaveBigFilePartRequest) to sleep
+            # in-place on short FloodWait / FloodPremiumWait up to floodwait_defer_after_seconds;
+            # longer waits raise out to TelegramLimiter / Worker for job deferral.
+            flood_sleep_threshold=self._flood_sleep_threshold(),
+            request_retries=10,
+            raise_last_call_error=True,
             device_model="TG Migrator",
             app_version=__version__,
             connection_retries=10,
@@ -148,6 +167,7 @@ class ClientManager:
         return True
 
     async def adopt_reader(self, client: TelegramClient) -> None:
+        client.flood_sleep_threshold = self._flood_sleep_threshold()
         self.reader = client
         self.reader_me = await client.get_me()
         _secure_session_file(self.session_path(self.boot.user_session_name))

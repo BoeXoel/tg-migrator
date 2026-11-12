@@ -41,5 +41,11 @@ AUTH_LOST_ERRORS = _get(
 )
 PEER_INVALID_ERRORS = _get("PeerIdInvalidError")
 CAPTION_TOO_LONG_ERRORS = _get("MediaCaptionTooLongError")
+FLOOD_WAIT_ERRORS = _get(
+    "FloodWaitError",
+    "FloodPremiumWaitError",
+    "SlowModeWaitError",
+    "FloodTestPhoneWaitError",
+)
 RETRYABLE_TELEGRAM_ERRORS = _get("FileReferenceExpiredError", "ServerError", "TimedOutError", "RpcCallFailError")
 BAD_REQUEST_ERRORS = _get("BadRequestError")

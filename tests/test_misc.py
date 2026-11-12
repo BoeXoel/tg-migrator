@@ -449,3 +449,118 @@ def test_errors_view_blocked_skip_retry_and_csv_report(tmp_path):
             await engine.dispose()
 
     asyncio.run(scenario())
+
+
+def test_flood_premium_wait_handling_and_client_threshold(tmp_path, monkeypatch):
+    from telethon import errors
+
+    from app.engine.notifier import Notifier
+    from app.engine.worker import Worker
+    from app.errors import FloodWaitDeferred
+    from app.telegram.client_manager import ClientManager
+    from app.telegram.errors_map import FLOOD_WAIT_ERRORS
+    from app.telegram.limiter import TelegramLimiter
+    from fakes import make_boot
+
+    assert errors.FloodPremiumWaitError in FLOOD_WAIT_ERRORS
+    assert errors.FloodWaitError in FLOOD_WAIT_ERRORS
+
+    slept: list[float] = []
+    real_sleep = asyncio.sleep
+
+    async def fake_sleep(seconds: float) -> None:
+        slept.append(seconds)
+        await real_sleep(0)
+
+    monkeypatch.setattr("app.telegram.limiter.asyncio.sleep", fake_sleep)
+
+    async def scenario():
+        engine = create_engine(f"sqlite+aiosqlite:///{tmp_path / 'flood.db'}")
+        try:
+            await init_models(engine)
+            repo = Repository(engine, make_sessionmaker(engine), SecretBox(load_or_create_key("", tmp_path)))
+            store = SettingsStore(repo, default_language="zh")
+            await store.load()
+            for key in (
+                "limits.global_min_delay_seconds",
+                "limits.download_delay_seconds",
+                "limits.floodwait_extra_min_seconds",
+                "limits.floodwait_extra_max_seconds",
+            ):
+                await store.set(key, 0)
+
+            limiter = TelegramLimiter(store)
+
+            # 1) Layer 2: TelegramLimiter.call catches FloodPremiumWaitError <= threshold and retries cleanly
+            calls = 0
+
+            async def flaky_download():
+                nonlocal calls
+                calls += 1
+                if calls == 1:
+                    raise errors.FloodPremiumWaitError(request=None, capture=4)
+                return "ok"
+
+            assert await limiter.call("download", flaky_download) == "ok"
+            assert calls == 2
+            assert 4 in slept
+
+            # When FloodPremiumWaitError exceeds floodwait_defer_after_seconds (default 60), defer job
+            async def long_premium_wait():
+                raise errors.FloodPremiumWaitError(request=None, capture=75)
+
+            with pytest.raises(FloodWaitDeferred) as exc_info:
+                await limiter.call("download", long_premium_wait)
+            assert exc_info.value.retry_after_seconds == 75
+
+            # 2) Layer 1: ClientManager.make_client sets flood_sleep_threshold, request_retries, raise_last_call_error
+            boot = make_boot(tmp_path)
+            cm = ClientManager(boot, limiter)
+            client = cm.make_client("user")
+            try:
+                assert client.flood_sleep_threshold == 60
+                assert client._request_retries == 10
+                assert client._raise_last_call_error is True
+
+                cm.reader = client
+                await store.set("limits.floodwait_defer_after_seconds", 90)
+                assert client.flood_sleep_threshold == 90
+            finally:
+                await client.disconnect()
+
+            # 3) Layer 3: Worker._handle_error defers raw FloodPremiumWaitError (e.g. from streaming iter_download)
+            target = await repo.add_target(name="DAV", type="webdav", config={"url": "https://dav.example/a"})
+            await repo.enqueue_jobs(
+                [
+                    {
+                        "target_id": target.id,
+                        "source_chat_id": "-100123",
+                        "source_message_id": 42,
+                        "source_message_ids": [42],
+                        "dedupe_key": "m:42",
+                        "media_type": "video",
+                        "status": "pending",
+                    }
+                ]
+            )
+            due = await repo.fetch_due_jobs(1)
+            job = due[0]
+            attempts = await repo.claim_job(job.id)
+            assert attempts == 1
+
+            worker = Worker.__new__(Worker)
+            worker.repo = repo
+            worker.store = store
+            worker.notifier = Notifier((1,))
+            await worker._handle_error(job, attempts, errors.FloodPremiumWaitError(request=None, capture=12))
+
+            refreshed = await repo.get_job(job.id)
+            assert refreshed.status == "pending"
+            assert refreshed.attempts == 0  # defer_job rolls back attempt so retries are never burned
+            assert refreshed.reason_code == "flood_wait"
+            assert refreshed.next_retry_at is not None
+            assert "FloodPremiumWaitError" in (refreshed.last_error or "")
+        finally:
+            await engine.dispose()
+
+    asyncio.run(scenario())

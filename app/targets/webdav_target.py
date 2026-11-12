@@ -229,12 +229,12 @@ class WebDAVTarget:
     async def _stream(self, reader: Any, dav: WebDAVClient, message: Any, remote: list[str], size: int | None) -> None:
         """Telegram -> WebDAV without touching the local disk."""
 
-        await self.limiter.wait("download")
         if mh.media_kind(message) == "photo":
-            content = await reader.download_media(message, file=bytes)
+            content = await self.limiter.call("download", reader.download_media, message, file=bytes)
             await dav.put_bytes(remote, content)
             return
 
+        await self.limiter.wait("download")
         document = mh.media_object(message)
 
         async def chunks() -> AsyncIterator[bytes]:
