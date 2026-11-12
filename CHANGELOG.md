@@ -5,6 +5,16 @@ All notable changes to this project will be documented in this file.
 The format is based on [Keep a Changelog](https://keepachangelog.com/en/1.1.0/),
 and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0.html).
 
+## [1.0.1] - 2026-11-12
+
+### Added
+- **Failed & Blocked-Skip Inspection (`/errors`) & Smart Remediation Retry**:
+  - Split `skipped` items into normal **Filtered** skips (keyword/regex rules, disabled media types) vs actionable **Blocked** skips (missing chat permissions, closed Forum Topics, oversized files, WebDAV errors, `native_only` restrictions).
+  - Added `/errors [task_id]` (alias `/failed`) and **`⚠️ View Issues`** buttons in `/tasks <id>`, `/status`, and task completion notifications to display paginated problem lists with clickable source message links and error details.
+  - Upgraded `/retry [task_id] [all]` and inline retry buttons to support re-queuing actionable blocked skips alongside failed jobs once permissions or fallback targets are fixed, without re-running normal content-filter skips.
+  - Upgraded `/report [task_id]` to export a comprehensive CSV report of all failed, blocked-skipped, and oversized items including `last_error` and `source_link`.
+- **Interactive Filter Rule Wizards & Regex Templates**: Added `➕ Add Keyword` and `➕ Add Regex` buttons in `/filters` and `/config -> Filters` with one-step interactive input, copyable `/filter_add` command hints, and ready-to-use regex templates.
+
 ## [1.0.0] - 2026-11-09
 
 ### Added
