@@ -8,6 +8,7 @@ from dataclasses import dataclass, field
 from datetime import datetime, timedelta
 from typing import Any
 
+from telethon import Button
 from telethon.tl import types
 
 from app.config import BootstrapConfig
@@ -373,19 +374,56 @@ class Worker:
         task = await self.repo.finish_task_if_complete(task_id)
         if task is None:
             return
-        counts = await self.repo.task_job_counts(task_id)
+        counts = await self.repo.task_summary_counts(task_id)
+        done = counts["done"]
+        filtered = counts["filtered"]
+        blocked = counts["blocked"]
+        failed = counts["failed"]
+        problems = failed + blocked
         lang = getattr(self.store.current.ui, "language", "en") or "en"
+        icon = "⚠️" if problems else "✅"
         if lang == "zh":
+            title_suffix = "完成（存在异常项）" if problems else "完成"
             text = (
-                f"✅ 任务 #{task.id} 完成：{task.source_title or task.source_chat_id}\n"
-                f"成功 {counts.get('done', 0)} · 跳过 {counts.get('skipped', 0)} · 失败 {counts.get('failed', 0)}"
+                f"{icon} 任务 #{task.id} {title_suffix}：{task.source_title or task.source_chat_id}\n"
+                f"成功 {done} · 规则过滤 {filtered} · 异常阻断 {blocked} · 失败 {failed}"
             )
         else:
+            title_suffix = "completed with issues" if problems else "completed"
             text = (
-                f"✅ Task #{task.id} completed: {task.source_title or task.source_chat_id}\n"
-                f"Done {counts.get('done', 0)} · Skipped {counts.get('skipped', 0)} · Failed {counts.get('failed', 0)}"
+                f"{icon} Task #{task.id} {title_suffix}: {task.source_title or task.source_chat_id}\n"
+                f"Done {done} · Filtered {filtered} · Blocked {blocked} · Failed {failed}"
             )
-        await self.notifier.notify(text, chat_id=task.notify_chat_id)
+
+        buttons: list[list[Any]] | None = None
+        if problems:
+            buttons = [
+                [
+                    Button.inline(
+                        f"⚠️ 异常明细 ({problems})" if lang == "zh" else f"⚠️ View Issues ({problems})",
+                        f"err:t:{task.id}:0".encode(),
+                    )
+                ]
+            ]
+            retry_row: list[Any] = []
+            if failed:
+                retry_row.append(
+                    Button.inline(
+                        f"🔁 重试失败项 ({failed})" if lang == "zh" else f"🔁 Retry Failed ({failed})",
+                        f"tk:r:{task.id}".encode(),
+                    )
+                )
+            if blocked:
+                label = (
+                    (f"🔁 重试失败+阻断 ({problems})" if failed else f"🔁 重试阻断项 ({blocked})")
+                    if lang == "zh"
+                    else (f"🔁 Retry All ({problems})" if failed else f"🔁 Retry Blocked ({blocked})")
+                )
+                retry_row.append(Button.inline(label, f"tk:rb:{task.id}".encode()))
+            if retry_row:
+                buttons.append(retry_row)
+
+        await self.notifier.notify(text, chat_id=task.notify_chat_id, buttons=buttons)
 
     def status_lines(self, lang: str = "en") -> list[str]:
         lines = []

@@ -104,7 +104,9 @@ Each Watch Route supports dotted setting overrides that take precedence over glo
 ## 5. Queue Management & Recovery
 
 - **Inspect Queue & Disk Space**: Send `/status` (or tap **`📊 Status`**).
+- **Inspect Failed & Blocked Items**: Send `/errors` (global across all tasks and live Watch Routes) or `/errors 5` (for Task `#5`, also accessible via **`⚠️ View Issues`** in `/tasks 5`) to view a paginated list of failed or blocked-skipped messages with clickable source links and error reasons.
 - **Pause / Resume Worker**: Send `/pause` (completes the current in-flight transfer cleanly before pausing) and `/resume`.
-- **Retry Failed Jobs**: Send `/retry` (retries all failed jobs) or `/retry 5` (retries failed jobs in Task `#5`).
-- **Cancel a Running Task**: Send `/cancel_task 5` (or tap **`✖️ Cancel`** inside **`📋 Tasks`**).
+- **Retry Failed or Blocked Jobs**: Send `/retry` or `/retry 5` to re-queue failed jobs; add `all` (e.g. `/retry 5 all` or tap **`🔁 Retry All`**) to also re-queue items skipped due to external blocks (such as missing chat permissions or oversized files after configuring a fallback target) without re-running normal content-filter skips.
+- **Export Issue & Oversized CSV Report**: Send `/report` or `/report 5` to download a full CSV report with source links, media metadata, and error details.
+- **Cancel a Running Task**: Send `/cancel_task 5` (or tap **`✖️ Cancel`** inside `/tasks 5`).
 - **Verify Delivered Messages**: Send `/verify` to sample and verify that previously delivered Telegram messages still exist in the destination chat.

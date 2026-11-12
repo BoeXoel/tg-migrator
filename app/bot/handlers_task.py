@@ -18,6 +18,7 @@ from app.bot.ui import (
     esc,
     paginate_items,
     pagination_row,
+    reason_label,
     status_labels,
     sync_bot_commands,
     target_id_list,
@@ -26,9 +27,10 @@ from app.bot.ui import (
 )
 from app.config import normalize_lang
 from app.db.models import TERMINAL_STATUSES
-from app.engine.report import oversized_csv
+from app.engine.report import problem_report_csv
 from app.engine.storage_guard import format_bytes, free_bytes
 from app.telegram.link_parser import ParsedLink
+from app.telegram.media_helper import source_link
 
 log = logging.getLogger("migrator.bot.task")
 
@@ -59,8 +61,10 @@ Send any Telegram message link directly:
 
 <b>Queue & Maintenance</b>
 /status Status · /tasks <code>[id]</code> List tasks or inspect task <code>#id</code> (alias: /task)
-/retry <code>[task_id]</code> · /pause · /resume · /recover · /cancel_task <code>id</code>
-/verify Verify delivered messages · /report Oversized CSV report
+/errors <code>[task_id]</code> View failed & blocked items (alias: /failed)
+/retry <code>[task_id] [all]</code> Retry failed items (add <code>all</code> to include blocked skips)
+/pause · /resume · /recover · /cancel_task <code>id</code>
+/verify Verify delivered messages · /report <code>[task_id]</code> Export issue & oversized CSV
 
 <b>Account</b>
 /login Log in reader account · /logout Log out · /cancel Abort operation"""
@@ -92,8 +96,10 @@ HELP_TEXT_ZH = """<b>📖 TG Migrator 命令速查字典</b>
 
 <b>队列与维护</b>
 /status 运行状态 · /tasks <code>[id]</code> 任务列表或管理指定 <code>#id</code>（别名：/task）
-/retry <code>[任务id]</code> · /pause · /resume · /recover · /cancel_task <code>id</code>
-/verify 校验已发送消息 · /report 导出超限文件 CSV
+/errors <code>[任务id]</code> 查看失败与异常阻断明细（别名：/failed）
+/retry <code>[任务id] [all]</code> 重试失败项（附加 <code>all</code> 连同异常阻断项一起重试）
+/pause · /resume · /recover · /cancel_task <code>id</code>
+/verify 校验已发送消息 · /report <code>[任务id]</code> 导出异常与超限 CSV 报表
 
 <b>读取账号</b>
 /login 登录读取账号 · /logout 退出登录 · /cancel 取消当前操作"""
@@ -226,18 +232,33 @@ async def status_view(ctx: AppContext) -> tuple[str, list[list[Any]]]:
         f"{tr(lang, 'Database', '数据库')}: {esc(ctx.database_label)}",
         f"{tr(lang, 'Proxy', '代理')}: {esc(ctx.boot.proxy.describe())}",
     ]
+    prob = await ctx.repo.count_problem_jobs()
+    if prob["total"]:
+        lines.append(
+            tr(
+                lang,
+                f"Issues: ❌Failed {prob['failed']} · ⚠️Blocked {prob['blocked']} (send /errors)",
+                f"异常记录：❌失败 {prob['failed']} · ⚠️异常阻断 {prob['blocked']}（发送 /errors 查看）",
+            )
+        )
     lines.extend(esc(line) for line in worker.status_lines(lang))
     toggle = (
         Button.inline(tr(lang, "▶️ Resume", "▶️ 恢复"), b"m:resume")
         if worker.paused
         else Button.inline(tr(lang, "⏸ Pause", "⏸ 暂停"), b"m:pause")
     )
+    err_label = (
+        tr(lang, f"⚠️ Issues ({prob['total']})", f"⚠️ 异常明细 ({prob['total']})")
+        if prob["total"]
+        else tr(lang, "⚠️ Issues", "⚠️ 异常明细")
+    )
     buttons = [
         [Button.inline(tr(lang, "🔄 Refresh", "🔄 刷新"), b"m:status"), toggle],
         [
-            Button.inline(tr(lang, "♻️ Recover Interrupted", "♻️ 恢复中断任务"), b"m:recover"),
             Button.inline(tr(lang, "📋 Tasks", "📋 任务"), b"m:tasks"),
+            Button.inline(err_label, b"err:g:0"),
         ],
+        [Button.inline(tr(lang, "♻️ Recover Interrupted", "♻️ 恢复中断任务"), b"m:recover")],
         [back_button(b"m:home", lang=lang)],
     ]
     return "\n".join(lines), buttons
@@ -255,18 +276,17 @@ async def tasks_view(ctx: AppContext, page: int = 0) -> tuple[str, list[list[Any
     page_suffix = f" ({page + 1}/{total_pages})" if total_pages > 1 else ""
     lines = [tr(lang, f"<b>📋 Recent Tasks{page_suffix}</b>", f"<b>📋 最近任务{page_suffix}</b>")]
     for task in page_items:
-        counts = await ctx.repo.task_job_counts(task.id)
-        open_jobs = sum(v for k, v in counts.items() if k not in TERMINAL_STATUSES)
+        counts = await ctx.repo.task_summary_counts(task.id)
         span = f"{task.start_id}-{task.end_id}" if task.end_id and task.end_id != task.start_id else f"{task.start_id}"
         lines.append(
             f"• <code>#{task.id}</code> [{task.status}] {esc(task.source_title or task.source_chat_id)} · {span}\n"
-            f"    ✅{counts.get('done', 0)} ⏭{counts.get('skipped', 0)} ❌{counts.get('failed', 0)} ⏳{open_jobs}"
+            f"    ✅{counts['done']} ⏭{counts['filtered']} ⚠️{counts['blocked']} ❌{counts['failed']} ⏳{counts['open']}"
         )
     lines.append(
         tr(
             lang,
-            "\n💡 <i>Send <code>/tasks &lt;ID&gt;</code> to inspect, cancel, or retry a specific task (e.g. <code>/tasks 1</code>).</i>",
-            "\n💡 <i>发送 <code>/tasks &lt;ID&gt;</code> 查看、取消或重试指定任务（如 <code>/tasks 1</code>）。</i>",
+            "\n💡 <i>Send <code>/tasks &lt;ID&gt;</code> to inspect, view issues, cancel, or retry a task (e.g. <code>/tasks 1</code>).</i>",
+            "\n💡 <i>发送 <code>/tasks &lt;ID&gt;</code> 查看详情、异常明细、取消或重试指定任务（如 <code>/tasks 1</code>）。</i>",
         )
     )
     rows: list[list[Any]] = []
@@ -288,8 +308,13 @@ async def task_detail_view(ctx: AppContext, task_id: int) -> tuple[str, list[lis
     task = await ctx.repo.get_task(task_id)
     if task is None:
         return tr(lang, "Task does not exist.", "任务不存在。"), [[back_button(b"m:tasks", lang=lang)]]
-    counts = await ctx.repo.task_job_counts(task.id)
-    open_jobs = sum(v for k, v in counts.items() if k not in TERMINAL_STATUSES)
+    counts = await ctx.repo.task_summary_counts(task.id)
+    done = counts["done"]
+    filtered = counts["filtered"]
+    blocked = counts["blocked"]
+    failed = counts["failed"]
+    open_jobs = counts["open"]
+    problems = failed + blocked
     span = f"{task.start_id}-{task.end_id}" if task.end_id and task.end_id != task.start_id else f"{task.start_id}"
     lines = [
         tr(lang, f"<b>📋 Task #{task.id}</b>", f"<b>📋 任务 #{task.id}</b>"),
@@ -298,30 +323,161 @@ async def task_detail_view(ctx: AppContext, task_id: int) -> tuple[str, list[lis
     ]
     if task.source_topic_id:
         lines.append(f"Topic: <code>{task.source_topic_id}</code>")
+    progress_line = tr(
+        lang,
+        f"Progress: ✅Done {done} · ⏭Filtered {filtered} · ⚠️Blocked {blocked} · ❌Failed {failed} · ⏳Open {open_jobs}",
+        f"进度：✅成功 {done} · ⏭规则过滤 {filtered} · ⚠️异常阻断 {blocked} · ❌失败 {failed} · ⏳进行中 {open_jobs}",
+    )
     lines.extend(
         [
             f"{tr(lang, 'Messages', '消息区间')}: <code>{span}</code>",
             f"{tr(lang, 'Targets', '目的地 ID')}: <code>{esc(task.target_ids)}</code>",
-            f"{tr(lang, 'Progress', '进度')}: ✅{counts.get('done', 0)} · ⏭{counts.get('skipped', 0)} · ❌{counts.get('failed', 0)} · ⏳{open_jobs}",
+            progress_line,
         ]
     )
     if task.error:
         lines.append(f"{tr(lang, 'Error', '错误')}: <code>{esc(task.error)}</code>")
 
-    action_row: list[Any] = []
-    if task.status in {"scanning", "queued"}:
-        action_row.append(Button.inline(tr(lang, f"✖️ Cancel #{task.id}", f"✖️ 取消 #{task.id}"), f"tk:x:{task.id}".encode()))
-    if counts.get("failed"):
-        action_row.append(Button.inline(tr(lang, f"🔁 Retry #{task.id}", f"🔁 重试 #{task.id}"), f"tk:r:{task.id}".encode()))
     rows: list[list[Any]] = []
-    if action_row:
-        rows.append(action_row)
+    top_row: list[Any] = []
+    if task.status in {"scanning", "queued"}:
+        top_row.append(Button.inline(tr(lang, f"✖️ Cancel #{task.id}", f"✖️ 取消 #{task.id}"), f"tk:x:{task.id}".encode()))
+    if problems:
+        top_row.append(
+            Button.inline(
+                tr(lang, f"⚠️ View Issues ({problems})", f"⚠️ 异常明细 ({problems})"),
+                f"err:t:{task.id}:0".encode(),
+            )
+        )
+    if top_row:
+        rows.append(top_row)
+
+    retry_row: list[Any] = []
+    if failed:
+        retry_row.append(
+            Button.inline(
+                tr(lang, f"🔁 Retry Failed ({failed})", f"🔁 重试失败项 ({failed})"),
+                f"tk:r:{task.id}".encode(),
+            )
+        )
+    if blocked:
+        label = (
+            tr(lang, f"🔁 Retry All ({problems})", f"🔁 重试失败+阻断 ({problems})")
+            if failed
+            else tr(lang, f"🔁 Retry Blocked ({blocked})", f"🔁 重试阻断项 ({blocked})")
+        )
+        retry_row.append(Button.inline(label, f"tk:rb:{task.id}".encode()))
+    if retry_row:
+        rows.append(retry_row)
+
     rows.append(
         [
             Button.inline(tr(lang, "🔄 Refresh", "🔄 刷新"), f"tk:v:{task.id}".encode()),
             back_button(b"m:tasks", lang=lang),
         ]
     )
+    return "\n".join(lines), rows
+
+
+async def errors_view(ctx: AppContext, *, task_id: int | None = None, page: int = 0) -> tuple[str, list[list[Any]]]:
+    """Paginated pure-text list of failed and blocked-skipped jobs (global or per-task)."""
+
+    lang = ctx.lang
+    scope = f"t:{task_id}" if task_id is not None else "g"
+    back_cb = f"tk:v:{task_id}".encode() if task_id is not None else b"m:status"
+    back_label = tr(lang, f"⬅️ Task #{task_id}", f"⬅️ 返回任务 #{task_id}") if task_id is not None else None
+
+    counts = await ctx.repo.count_problem_jobs(task_id=task_id)
+    jobs = await ctx.repo.list_problem_jobs(task_id=task_id, limit=200)
+    if not jobs:
+        title = (
+            tr(lang, f"<b>✅ Task #{task_id} — No Issues</b>", f"<b>✅ 任务 #{task_id} 暂无异常项</b>")
+            if task_id is not None
+            else tr(lang, "<b>✅ No Failed or Blocked Items</b>", "<b>✅ 暂无失败或异常阻断记录</b>")
+        )
+        nav_btns = [[back_button(back_cb, back_label, lang=lang)]]
+        if task_id is None:
+            nav_btns.append([back_button(b"m:home", lang=lang)])
+        return title, nav_btns
+
+    target_map = {t.id: t.name for t in await ctx.repo.list_targets()}
+    page_items, page, total_pages = paginate_items(jobs, page, PAGE_SIZE)
+    page_suffix = f" ({page + 1}/{total_pages})" if total_pages > 1 else ""
+    if task_id is not None:
+        header = tr(
+            lang,
+            f"<b>⚠️ Task #{task_id} Issues{page_suffix}</b>\n❌Failed {counts['failed']} · ⚠️Blocked {counts['blocked']}",
+            f"<b>⚠️ 任务 #{task_id} 异常明细{page_suffix}</b>\n❌失败 {counts['failed']} · ⚠️异常阻断 {counts['blocked']}",
+        )
+    else:
+        header = tr(
+            lang,
+            f"<b>⚠️ Failed &amp; Blocked Items{page_suffix}</b>\n❌Failed {counts['failed']} · ⚠️Blocked {counts['blocked']}",
+            f"<b>⚠️ 失败与异常阻断明细{page_suffix}</b>\n❌失败 {counts['failed']} · ⚠️异常阻断 {counts['blocked']}",
+        )
+
+    lines = [header]
+    for job in page_items:
+        icon = "❌" if job.status == "failed" else "⚠️"
+        ids = [int(x) for x in (job.source_message_ids or []) if str(x).isdigit()]
+        msg_span = f"{min(ids)}-{max(ids)}" if len(ids) > 1 else f"{job.source_message_id}"
+        src_title = esc(job.source_title or job.source_chat_id)
+        link = source_link(job.source_chat_id, int(job.source_message_id), job.source_topic_id)
+        msg_ref = f'<a href="{esc(link)}">{src_title} #{msg_span}</a>' if link else f"{src_title} <code>#{msg_span}</code>"
+        origin = ""
+        if task_id is None:
+            if job.task_id:
+                origin = f"[T#{job.task_id}] "
+            elif job.route_id:
+                origin = f"[R#{job.route_id}] "
+        tname = esc(target_map.get(job.target_id, f"#{job.target_id}"))
+        size_part = f" · {format_bytes(job.file_size)}" if job.file_size else ""
+        r_label = esc(reason_label(job.reason_code, lang))
+        raw_err = " ".join((job.last_error or "").split())
+        if len(raw_err) > 110:
+            raw_err = raw_err[:109] + "…"
+        err_part = f": <code>{esc(raw_err)}</code>" if raw_err else ""
+        lines.append(
+            f"• {icon} {origin}{msg_ref} → <code>#{job.target_id}</code> {tname} ({esc(job.media_type)}{size_part})\n"
+            f"    └ <b>{r_label}</b>{err_part}"
+        )
+
+    rows: list[list[Any]] = []
+    nav = pagination_row(f"err:{scope}", page, total_pages, lang=lang)
+    if nav:
+        rows.append(nav)
+
+    retry_row: list[Any] = []
+    failed_n = counts["failed"]
+    blocked_n = counts["blocked"]
+    total_n = counts["total"]
+    if failed_n:
+        retry_row.append(
+            Button.inline(
+                tr(lang, f"🔁 Retry Failed ({failed_n})", f"🔁 重试失败项 ({failed_n})"),
+                f"err:rf:{scope}:{page}".encode(),
+            )
+        )
+    if blocked_n:
+        label = (
+            tr(lang, f"🔁 Retry All ({total_n})", f"🔁 重试失败+阻断 ({total_n})")
+            if failed_n
+            else tr(lang, f"🔁 Retry Blocked ({blocked_n})", f"🔁 重试阻断项 ({blocked_n})")
+        )
+        retry_row.append(Button.inline(label, f"err:rb:{scope}:{page}".encode()))
+    if retry_row:
+        rows.append(retry_row)
+
+    csv_scope = str(task_id) if task_id is not None else "0"
+    rows.append(
+        [
+            Button.inline(tr(lang, "🔄 Refresh", "🔄 刷新"), f"err:{scope}:{page}".encode()),
+            Button.inline(tr(lang, "📄 Export CSV", "📄 导出 CSV"), f"err:csv:{csv_scope}".encode()),
+        ]
+    )
+    rows.append([back_button(back_cb, back_label, lang=lang)])
+    if task_id is None:
+        rows.append([back_button(b"m:home", lang=lang)])
     return "\n".join(lines), rows
 
 
@@ -647,12 +803,51 @@ async def cmd_recover(event: Any, ctx: AppContext) -> None:
     )
 
 
+async def cmd_errors(event: Any, ctx: AppContext) -> None:
+    arg = command_args(event).lstrip("#").strip()
+    task_id: int | None = None
+    if arg:
+        if not arg.isdigit():
+            await event.respond(
+                ctx.t(
+                    "Usage: /errors <code>[task_id]</code>",
+                    "用法：/errors <code>[任务ID]</code>",
+                )
+            )
+            return
+        task_id = int(arg)
+    text, buttons = await errors_view(ctx, task_id=task_id, page=0)
+    await event.respond(text, buttons=buttons)
+
+
 async def cmd_retry(event: Any, ctx: AppContext) -> None:
-    args = command_args(event)
-    task_id = int(args.lstrip("#")) if args.strip().lstrip("#").isdigit() else None
-    count = await ctx.repo.retry_jobs(task_id=task_id)
+    tokens = [tok.lstrip("#").lower() for tok in command_args(event).split() if tok.strip()]
+    task_id: int | None = None
+    include_blocked = False
+    for tok in tokens:
+        if tok.isdigit() and task_id is None:
+            task_id = int(tok)
+        elif tok in {"all", "blocked", "skipped"}:
+            include_blocked = True
+        else:
+            await event.respond(
+                ctx.t(
+                    "Usage: /retry <code>[task_id] [all]</code>\nAdd <code>all</code> to also re-queue blocked skips (permission/oversized/etc.).",
+                    "用法：/retry <code>[任务ID] [all]</code>\n附加 <code>all</code> 可将异常阻断跳过项（权限不足/超限等）一并重新入队。",
+                )
+            )
+            return
+    count = await ctx.repo.retry_jobs(task_id=task_id, include_blocked=include_blocked)
     ctx.worker.wake()
-    await event.respond(ctx.t(f"🔁 Re-queued {count} failed job(s).", f"🔁 已重新排队 {count} 个失败任务。"))
+    if include_blocked:
+        await event.respond(
+            ctx.t(
+                f"🔁 Re-queued {count} failed & blocked item(s).",
+                f"🔁 已重新排队 {count} 个失败与异常阻断项。",
+            )
+        )
+    else:
+        await event.respond(ctx.t(f"🔁 Re-queued {count} failed job(s).", f"🔁 已重新排队 {count} 个失败任务。"))
 
 
 async def cmd_cancel_task(event: Any, ctx: AppContext) -> None:
@@ -685,15 +880,34 @@ async def cmd_verify(event: Any, ctx: AppContext) -> None:
     )
 
 
-async def cmd_report(event: Any, ctx: AppContext) -> None:
-    rows, content = await oversized_csv(ctx.repo)
+async def _send_report(event: Any, ctx: AppContext, *, task_id: int | None = None) -> None:
+    rows, content = await problem_report_csv(ctx.repo, task_id=task_id)
     if not rows:
-        await event.respond(ctx.t("No oversized skipped file records found.", "没有超限文件记录。"))
+        await event.respond(
+            ctx.t(
+                "No failed, blocked, or oversized records found.",
+                "没有失败、异常阻断或超限文件记录。",
+            )
+        )
         return
-    await event.respond(
-        ctx.t(f"📄 Oversized skipped files: {rows}", f"📄 超限文件 {rows} 条"),
-        file=_named_bytes(content, "oversized.csv"),
+    filename = f"report_task_{task_id}.csv" if task_id is not None else "problem_report.csv"
+    caption = (
+        ctx.t(f"📄 Task #{task_id} issue report: {rows} row(s)", f"📄 任务 #{task_id} 异常与超限报表：{rows} 条")
+        if task_id is not None
+        else ctx.t(f"📄 Issue & oversized report: {rows} row(s)", f"📄 全局异常与超限报表：{rows} 条")
     )
+    await event.respond(caption, file=_named_bytes(content, filename))
+
+
+async def cmd_report(event: Any, ctx: AppContext) -> None:
+    arg = command_args(event).lstrip("#").strip()
+    task_id: int | None = None
+    if arg:
+        if not arg.isdigit():
+            await event.respond(ctx.t("Usage: /report <code>[task_id]</code>", "用法：/report <code>[任务ID]</code>"))
+            return
+        task_id = int(arg)
+    await _send_report(event, ctx, task_id=task_id)
 
 
 def _named_bytes(content: bytes, name: str) -> Any:
@@ -757,7 +971,44 @@ async def on_task_button(event: Any, ctx: AppContext) -> None:
         count = await ctx.repo.retry_jobs(task_id=task_id)
         ctx.worker.wake()
         await event.answer(ctx.t(f"Re-queued {count} item(s)", f"已重新排队 {count} 项"))
+    elif action == "rb":
+        count = await ctx.repo.retry_jobs(task_id=task_id, include_blocked=True)
+        ctx.worker.wake()
+        await event.answer(ctx.t(f"Re-queued {count} item(s)", f"已重新排队 {count} 项"))
     text, buttons = await task_detail_view(ctx, task_id)
+    await event.edit(text, buttons=buttons)
+
+
+async def on_error_button(event: Any, ctx: AppContext) -> None:
+    parts = event.data.decode().split(":")
+    op = parts[1]
+    if op == "csv":
+        raw_tid = int(parts[2]) if len(parts) > 2 and parts[2].isdigit() else 0
+        await event.answer()
+        await _send_report(event, ctx, task_id=raw_tid or None)
+        return
+
+    retry_mode: str | None = None
+    idx = 1
+    if op in {"rf", "rb"}:
+        retry_mode = op
+        idx = 2
+
+    scope_kind = parts[idx] if len(parts) > idx else "g"
+    if scope_kind == "t" and len(parts) > idx + 1 and parts[idx + 1].isdigit():
+        task_id: int | None = int(parts[idx + 1])
+        page_idx = idx + 2
+    else:
+        task_id = None
+        page_idx = idx + 1
+    page = int(parts[page_idx]) if len(parts) > page_idx and parts[page_idx].lstrip("-").isdigit() else 0
+
+    if retry_mode is not None:
+        count = await ctx.repo.retry_jobs(task_id=task_id, include_blocked=(retry_mode == "rb"))
+        ctx.worker.wake()
+        await event.answer(ctx.t(f"Re-queued {count} item(s)", f"已重新排队 {count} 项"))
+
+    text, buttons = await errors_view(ctx, task_id=task_id, page=page)
     await event.edit(text, buttons=buttons)
 
 
@@ -769,6 +1020,8 @@ def register(bot: TelegramClient, ctx: AppContext) -> None:
         "status": cmd_status,
         "tasks": cmd_tasks,
         "task": cmd_tasks,
+        "errors": cmd_errors,
+        "failed": cmd_errors,
         "pause": cmd_pause,
         "resume": cmd_resume,
         "recover": cmd_recover,
@@ -782,3 +1035,4 @@ def register(bot: TelegramClient, ctx: AppContext) -> None:
     bot.add_event_handler(admin_only(ctx, on_menu), events.CallbackQuery(pattern=rb"^m:"))
     bot.add_event_handler(admin_only(ctx, on_selection), events.CallbackQuery(pattern=rb"^sel:"))
     bot.add_event_handler(admin_only(ctx, on_task_button), events.CallbackQuery(pattern=rb"^tk:"))
+    bot.add_event_handler(admin_only(ctx, on_error_button), events.CallbackQuery(pattern=rb"^err:"))

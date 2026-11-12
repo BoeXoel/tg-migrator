@@ -241,7 +241,210 @@ def test_paginated_list_views_and_zero_item_buttons(tmp_path):
             assert isinstance(calls[0].scope, types.BotCommandScopeDefault)
             assert isinstance(calls[1].scope, types.BotCommandScopePeer)
             cmd_names = [c.command for c in calls[1].commands]
-            assert {"start", "help", "targets", "routes", "tasks"}.issubset(cmd_names)
+            assert {"start", "help", "targets", "routes", "tasks", "errors"}.issubset(cmd_names)
+
+            # 6) Filter rules view includes /filter_add hints and Add Keyword / Add Regex wizard buttons
+            from app.bot.handlers_config import _filter_wizard, config_view, rules_view
+
+            empty_rules_text, empty_rules_rows = await rules_view(ctx)
+            assert "/filter_add keyword" in empty_rules_text and "/filter_add regex" in empty_rules_text
+            assert {b"cfg:fadd:keyword", b"cfg:fadd:regex"}.issubset(cb_data(empty_rules_rows))
+
+            await repo.add_filter("keyword", "广告")
+            non_empty_text, non_empty_rows = await rules_view(ctx)
+            assert "/filter_add keyword" in non_empty_text and "/filter_add regex" in non_empty_text
+            assert "/filter_del" in non_empty_text and "/filter_toggle" in non_empty_text
+            assert {b"cfg:fadd:keyword", b"cfg:fadd:regex"}.issubset(cb_data(non_empty_rows))
+
+            _, cfg_filter_rows = config_view(ctx, section="filters")
+            assert {b"cfg:fadd:keyword", b"cfg:fadd:regex"}.issubset(cb_data(cfg_filter_rows))
+
+            regex_wiz = _filter_wizard(ctx, "regex")
+            assert "(广告|推广|抽奖|合作)" in regex_wiz.steps[0].prompt
+            assert "https?://|t\\.me/(\\+|joinchat/)" in regex_wiz.steps[0].prompt
+            assert regex_wiz.steps[0].parse("/filter_add regex (a|b)") == "(a|b)"
+        finally:
+            await engine.dispose()
+
+    asyncio.run(scenario())
+
+
+def test_errors_view_blocked_skip_retry_and_csv_report(tmp_path):
+    from app.bot.handlers_task import errors_view
+    from app.engine.notifier import Notifier
+    from app.engine.report import problem_report_csv
+    from app.engine.worker import Worker
+
+    async def scenario():
+        engine = create_engine(f"sqlite+aiosqlite:///{tmp_path / 'err.db'}")
+        try:
+            await init_models(engine)
+            repo = Repository(engine, make_sessionmaker(engine), SecretBox(load_or_create_key("", tmp_path)))
+            store = SettingsStore(repo, default_language="zh")
+            await store.load()
+            ctx = SimpleNamespace(repo=repo, store=store, lang="zh", state=BotState())
+
+            target = await repo.add_target(name="NAS", type="local", config={"path": "nas"})
+            route = await repo.add_route(name="LiveRoute", source_chat_id="-100777", target_ids=[target.id], watch_enabled=True)
+            task = await repo.create_task(
+                kind="adhoc",
+                source_chat_id="-100123456",
+                source_title="测试源群",
+                start_id=10,
+                end_id=14,
+                target_ids=[target.id],
+                notify_chat_id=999,
+                status="queued",
+            )
+
+            await repo.enqueue_jobs(
+                [
+                    # 1) Done job (with oversized_fallback)
+                    {
+                        "task_id": task.id,
+                        "target_id": target.id,
+                        "source_chat_id": "-100123456",
+                        "source_title": "测试源群",
+                        "source_message_id": 10,
+                        "source_message_ids": [10],
+                        "dedupe_key": "m:10",
+                        "media_type": "video",
+                        "file_size": 3 * 1024**3,
+                        "status": "done",
+                        "reason_code": "oversized_fallback",
+                    },
+                    # 2) Normal filtered skip (must NOT appear in /errors and must NOT be retried)
+                    {
+                        "task_id": task.id,
+                        "target_id": target.id,
+                        "source_chat_id": "-100123456",
+                        "source_title": "测试源群",
+                        "source_message_id": 11,
+                        "source_message_ids": [11],
+                        "dedupe_key": "m:11",
+                        "media_type": "text",
+                        "status": "skipped",
+                        "reason_code": "content_filtered",
+                        "last_error": "Skipped by keyword filter rule #1",
+                    },
+                    # 3) Actionable blocked skip (permission_denied)
+                    {
+                        "task_id": task.id,
+                        "target_id": target.id,
+                        "source_chat_id": "-100123456",
+                        "source_title": "测试源群",
+                        "source_message_id": 12,
+                        "source_message_ids": [12],
+                        "dedupe_key": "m:12",
+                        "media_type": "video",
+                        "file_size": 50 * 1024**2,
+                        "status": "skipped",
+                        "reason_code": "permission_denied",
+                        "last_error": "ChatWriteForbiddenError: cannot write",
+                    },
+                    # 4) Failed job in task
+                    {
+                        "task_id": task.id,
+                        "target_id": target.id,
+                        "source_chat_id": "-100123456",
+                        "source_title": "测试源群",
+                        "source_message_id": 13,
+                        "source_message_ids": [13],
+                        "dedupe_key": "m:13",
+                        "media_type": "document",
+                        "status": "failed",
+                        "reason_code": "network_error",
+                        "attempts": 3,
+                        "last_error": "Connection reset by peer",
+                    },
+                    # 5) Live Watch Route failed job (task_id=None)
+                    {
+                        "task_id": None,
+                        "route_id": route.id,
+                        "target_id": target.id,
+                        "source_chat_id": "-100777",
+                        "source_title": "监听群",
+                        "source_message_id": 88,
+                        "source_message_ids": [88],
+                        "dedupe_key": "m:88",
+                        "media_type": "photo",
+                        "status": "failed",
+                        "reason_code": "network_error",
+                        "attempts": 3,
+                        "last_error": "Timeout reading media",
+                    },
+                ]
+            )
+
+            def cb_data(rows):
+                return [
+                    getattr(btn, "data", None)
+                    or getattr(getattr(btn, "type", None), "data", None)
+                    or getattr(getattr(btn, "button", None), "data", b"")
+                    for row in rows
+                    for btn in row
+                ]
+
+            # Summary separates filtered (1) vs blocked (1) vs failed (1)
+            summary = await repo.task_summary_counts(task.id)
+            assert summary == {"done": 1, "filtered": 1, "blocked": 1, "skipped": 2, "failed": 1, "open": 0}
+
+            # Task completion notification attaches View Issues + Retry buttons
+            sent_notifications = []
+
+            class FakeBot:
+                async def send_message(self, chat_id, text, **kwargs):
+                    sent_notifications.append((chat_id, text, kwargs))
+
+            notifier = Notifier((999,))
+            notifier.bot = FakeBot()
+            dummy_worker = Worker.__new__(Worker)
+            dummy_worker.repo = repo
+            dummy_worker.store = store
+            dummy_worker.notifier = notifier
+            await dummy_worker._maybe_finish_task(task.id)
+            assert len(sent_notifications) == 1
+            _, notif_text, notif_kwargs = sent_notifications[0]
+            assert "规则过滤 1 · 异常阻断 1 · 失败 1" in notif_text
+            notif_cbs = cb_data(notif_kwargs["buttons"])
+            assert f"err:t:{task.id}:0".encode() in notif_cbs
+            assert f"tk:r:{task.id}".encode() in notif_cbs
+            assert f"tk:rb:{task.id}".encode() in notif_cbs
+
+            # Task-scoped errors_view shows #12 (blocked) and #13 (failed) with clickable link, excluding #11 (filtered)
+            t_err_text, t_err_rows = await errors_view(ctx, task_id=task.id)
+            assert "https://t.me/c/123456/12" in t_err_text
+            assert "https://t.me/c/123456/13" in t_err_text
+            assert "#11" not in t_err_text
+            assert "目标群权限不足" in t_err_text and "ChatWriteForbiddenError" in t_err_text
+            t_err_cbs = cb_data(t_err_rows)
+            assert f"err:rf:t:{task.id}:0".encode() in t_err_cbs
+            assert f"err:rb:t:{task.id}:0".encode() in t_err_cbs
+
+            # Global errors_view also includes live Watch Route job #88 ([R#1])
+            g_err_text, _ = await errors_view(ctx, task_id=None)
+            assert "[R#1]" in g_err_text and "https://t.me/c/777/88" in g_err_text
+
+            # CSV report includes failed + blocked + oversized_fallback (3 rows for task), excluding content_filtered
+            csv_rows, csv_bytes = await problem_report_csv(repo, task_id=task.id)
+            assert csv_rows == 3
+            csv_str = csv_bytes.decode("utf-8-sig")
+            assert "Connection reset by peer" in csv_str
+            assert "ChatWriteForbiddenError" in csv_str
+            assert "content_filtered" not in csv_str
+
+            # Default retry_jobs only re-queues failed (1 item in task), leaving blocked skip untouched
+            requeued_failed = await repo.retry_jobs(task_id=task.id, include_blocked=False)
+            assert requeued_failed == 1
+            after_first = await repo.task_summary_counts(task.id)
+            assert after_first["open"] == 1 and after_first["blocked"] == 1 and after_first["filtered"] == 1
+
+            # Retry with include_blocked=True re-queues blocked skip (#12), still leaving content_filtered (#11) untouched!
+            requeued_blocked = await repo.retry_jobs(task_id=task.id, include_blocked=True)
+            assert requeued_blocked == 1
+            after_second = await repo.task_summary_counts(task.id)
+            assert after_second["open"] == 2 and after_second["blocked"] == 0 and after_second["filtered"] == 1
+            assert (await repo.get_task(task.id)).status == "queued"
         finally:
             await engine.dispose()
 

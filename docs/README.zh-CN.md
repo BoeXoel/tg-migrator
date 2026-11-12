@@ -67,7 +67,8 @@ TG Migrator 免费开源。如果它帮到了你，欢迎[在 GitHub 上点个 S
   /targets [ID]                     分页查看目的地列表，或管理指定 #<ID> 目的地
   /add_route, /routes [ID]          创建实时监听路由，或管理指定 #<ID> 路由
   /tasks [ID], /status              分页查看任务队列，或查看/取消 #<ID> 任务
-  /pause, /resume, /retry [ID]      暂停/恢复全局队列，或重试失败的消息项
+  /errors [ID], /report [ID]        查看失败与异常阻断明细，或导出完整 CSV 报表
+  /pause, /resume, /retry [ID]      暂停/恢复全局队列，或重试失败及异常阻断项
   /config, /get, /set <键> <值>     交互式参数面板，或在线热更新配置项
   /filters                          管理关键词/正则黑白名单与媒体类型过滤
   /export [secrets], /import        导出或原子化导入 YAML 配置备份
