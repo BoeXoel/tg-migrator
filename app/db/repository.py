@@ -11,6 +11,7 @@ from sqlalchemy.ext.asyncio import AsyncEngine, async_sessionmaker
 
 from app.config import SECTION_NAMES, RuntimeSettings, dataclass_to_dict, settings_from_sections
 from app.db.models import (
+    BENIGN_SKIP_REASONS,
     TERMINAL_STATUSES,
     FilterRule,
     Job,
@@ -316,6 +317,38 @@ class Repository:
             )
             return {str(status): int(count) for status, count in rows.all()}
 
+    async def task_summary_counts(self, task_id: int) -> dict[str, int]:
+        """Return detailed job counts splitting skipped into ``filtered`` vs ``blocked``."""
+
+        async with self._sm() as session:
+            rows = await session.execute(
+                select(Job.status, Job.reason_code, func.count())
+                .where(Job.task_id == task_id)
+                .group_by(Job.status, Job.reason_code)
+            )
+            done = failed = filtered = blocked = open_jobs = 0
+            for status, reason_code, count in rows.all():
+                n = int(count)
+                if status == "done":
+                    done += n
+                elif status == "failed":
+                    failed += n
+                elif status == "skipped":
+                    if reason_code in BENIGN_SKIP_REASONS:
+                        filtered += n
+                    else:
+                        blocked += n
+                else:
+                    open_jobs += n
+            return {
+                "done": done,
+                "failed": failed,
+                "filtered": filtered,
+                "blocked": blocked,
+                "skipped": filtered + blocked,
+                "open": open_jobs,
+            }
+
     async def finish_task_if_complete(self, task_id: int) -> Task | None:
         """Mark a queued task done when it has no unfinished jobs; return it once."""
 
@@ -515,27 +548,89 @@ class Repository:
             await session.commit()
             return int(result.rowcount or 0)
 
-    async def retry_jobs(self, *, task_id: int | None = None, statuses: tuple[str, ...] = ("failed",)) -> int:
+    @staticmethod
+    def _blocked_skip_clause() -> Any:
+        return and_(
+            Job.status == "skipped",
+            or_(Job.reason_code.is_(None), Job.reason_code.not_in(BENIGN_SKIP_REASONS)),
+        )
+
+    @classmethod
+    def _problem_job_clause(cls) -> Any:
+        return or_(Job.status == "failed", cls._blocked_skip_clause())
+
+    async def retry_jobs(
+        self,
+        *,
+        task_id: int | None = None,
+        include_blocked: bool = False,
+        statuses: tuple[str, ...] = ("failed",),
+    ) -> int:
+        cond = or_(Job.status.in_(statuses), self._blocked_skip_clause()) if include_blocked else Job.status.in_(statuses)
         async with self._sm() as session:
             stmt = (
                 update(Job)
-                .where(Job.status.in_(statuses))
+                .where(cond)
                 .values(status="pending", attempts=0, next_retry_at=None, updated_at=utcnow())
             )
             if task_id is not None:
                 stmt = stmt.where(Job.task_id == task_id)
             result = await session.execute(stmt)
-            if task_id is not None:
-                await session.execute(
-                    update(Task).where(Task.id == task_id, Task.status == "done").values(status="queued", finished_at=None)
-                )
+            requeued = int(result.rowcount or 0)
+            if requeued:
+                if task_id is not None:
+                    await session.execute(
+                        update(Task).where(Task.id == task_id, Task.status == "done").values(status="queued", finished_at=None)
+                    )
+                else:
+                    pending_task_ids = select(Job.task_id).where(Job.status == "pending", Job.task_id.is_not(None)).distinct()
+                    await session.execute(
+                        update(Task)
+                        .where(Task.id.in_(pending_task_ids), Task.status == "done")
+                        .values(status="queued", finished_at=None)
+                    )
             await session.commit()
-            return int(result.rowcount or 0)
+            return requeued
 
     async def counts_by_status(self) -> dict[str, int]:
         async with self._sm() as session:
             rows = await session.execute(select(Job.status, func.count()).group_by(Job.status))
             return {str(status): int(count) for status, count in rows.all()}
+
+    async def count_problem_jobs(self, *, task_id: int | None = None) -> dict[str, int]:
+        async with self._sm() as session:
+            stmt = select(Job.status, func.count()).where(self._problem_job_clause()).group_by(Job.status)
+            if task_id is not None:
+                stmt = stmt.where(Job.task_id == task_id)
+            rows = {str(status): int(count) for status, count in (await session.execute(stmt)).all()}
+            failed = rows.get("failed", 0)
+            blocked = rows.get("skipped", 0)
+            return {"failed": failed, "blocked": blocked, "total": failed + blocked}
+
+    async def list_problem_jobs(self, *, task_id: int | None = None, limit: int = 200) -> list[Job]:
+        async with self._sm() as session:
+            stmt = (
+                select(Job)
+                .where(self._problem_job_clause())
+                .order_by(Job.updated_at.desc(), Job.id.desc())
+                .limit(limit)
+            )
+            if task_id is not None:
+                stmt = stmt.where(Job.task_id == task_id)
+            return list((await session.execute(stmt)).scalars().all())
+
+    async def report_jobs(self, *, task_id: int | None = None) -> list[Job]:
+        """Return all failed, blocked-skipped, and oversized-fallback jobs for CSV export."""
+
+        async with self._sm() as session:
+            stmt = (
+                select(Job)
+                .where(or_(self._problem_job_clause(), Job.reason_code.in_(("oversized", "oversized_fallback"))))
+                .order_by(Job.id.desc())
+            )
+            if task_id is not None:
+                stmt = stmt.where(Job.task_id == task_id)
+            return list((await session.execute(stmt)).scalars().all())
 
     async def jobs_for_verification(self, limit: int) -> list[Job]:
         async with self._sm() as session:

@@ -13,6 +13,7 @@ This page provides a complete reference for all Telegram Bot commands, `.env` bo
 | `/lang` | `[en\|zh]` | Toggle or set Bot UI and notification language (`en` or `zh`) |
 | `/status` | — | Show account capabilities, queue counters, worker state, and free disk space |
 | `/tasks` (or `/task`) | `[task_id]` | Paginated list of recent tasks (10/page), or inspect/cancel/retry task `#id` |
+| `/errors` (or `/failed`) | `[task_id]` | Paginated list of failed and blocked-skipped items with source links and error reasons |
 | `/targets` (or `/target`) | `[target_id]` | Paginated list of destinations (10/page), or open management card for target `#id` |
 | `/bind` | `[code]` | In a group/topic: bind it as a target. In private chat: generate a 10-min one-time bind code |
 | `/add_tg` | `<chat> [topic_id]` | Manually add a Telegram target by `@username` or `-100ID` and optional Forum Topic ID |
@@ -31,11 +32,11 @@ This page provides a complete reference for all Telegram Bot commands, `.env` bo
 | `/export` | `[secrets]` | Export all settings, targets, routes, and filters to YAML (`/export secrets` includes passwords) |
 | `/import` | `[replace]` | Reply to a YAML file with `/import` (merge) or `/import replace` (full overwrite) |
 | `/pause` / `/resume` | — | Pause or resume the background transfer worker |
-| `/retry` | `[task_id]` | Re-queue failed jobs globally or for a specific task |
+| `/retry` | `[task_id] [all]` | Re-queue failed jobs globally or for a task (`all` also re-queues blocked skips) |
 | `/recover` | — | Reset interrupted `in_progress` jobs back to `pending` (when worker is paused) |
 | `/cancel_task` | `<task_id>` | Cancel an active scan or queued task |
 | `/verify` | — | Verify that delivered Telegram messages still exist in destination chats |
-| `/report` | — | Export a CSV report of skipped oversized files |
+| `/report` | `[task_id]` | Export a CSV report of failed, blocked-skipped, and oversized items |
 | `/login` / `/logout` | — | Log in or log out the personal Telegram Reader account |
 | `/cancel` | — | Abort the current multi-step interactive wizard |
 

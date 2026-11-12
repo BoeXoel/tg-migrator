@@ -65,6 +65,54 @@ KIND_LABELS_I18N: dict[str, dict[str, str]] = {
 STATUS_LABELS = STATUS_LABELS_I18N["en"]
 KIND_LABELS = KIND_LABELS_I18N["en"]
 
+REASON_LABELS_I18N: dict[str, dict[str, str]] = {
+    "en": {
+        "oversized": "Oversized file",
+        "permission_denied": "Chat permission denied",
+        "remote_permission_denied": "Storage permission denied",
+        "remote_error": "Storage/WebDAV error",
+        "topic_error": "Forum Topic closed or invalid",
+        "target_config": "Target configuration error",
+        "telegram_bad_request": "Telegram rejected request",
+        "forward_restricted": "Native copy forbidden (native_only on)",
+        "native_unavailable": "Native copy unavailable (native_only on)",
+        "native_only_kind": "Unsupported for re-upload (native_only)",
+        "spoiler_removal_requires_reupload": "Spoiler strip requires re-upload",
+        "unknown_size": "Unknown file size",
+        "disk_job_limit": "Exceeds per-job size limit",
+        "network_error": "Network / transfer error",
+        "telegram_empty_result": "Empty Telegram response",
+        "unexpected_error": "Unexpected error",
+        "permanent": "Blocked by error",
+    },
+    "zh": {
+        "oversized": "文件超限",
+        "permission_denied": "目标群权限不足",
+        "remote_permission_denied": "存储目录/WebDAV权限不足",
+        "remote_error": "存储/WebDAV异常",
+        "topic_error": "子话题已关闭或无效",
+        "target_config": "目的地配置有误",
+        "telegram_bad_request": "Telegram 拒绝请求",
+        "forward_restricted": "禁止原生转发（开启了仅原生复制）",
+        "native_unavailable": "无法原生复制（开启了仅原生复制）",
+        "native_only_kind": "仅支持原生复制的消息类型",
+        "spoiler_removal_requires_reupload": "去剧透需下载重传（开启了仅原生复制）",
+        "unknown_size": "文件大小未知",
+        "disk_job_limit": "超出单任务大小限制",
+        "network_error": "网络或传输异常",
+        "telegram_empty_result": "Telegram 返回空结果",
+        "unexpected_error": "未预期异常",
+        "permanent": "异常阻断",
+    },
+}
+
+
+def reason_label(code: str | None, lang: str = "en") -> str:
+    if not code:
+        return tr(lang, "Error", "异常")
+    table = REASON_LABELS_I18N.get(lang, REASON_LABELS_I18N["en"])
+    return table.get(code, code)
+
 _DESTRUCTIVE_FORMAT_ENTITIES = (
     types.MessageEntityBold,
     types.MessageEntityItalic,
@@ -180,6 +228,7 @@ BOT_COMMANDS_I18N: dict[str, list[tuple[str, str]]] = {
         ("help", "Full command reference"),
         ("status", "System & queue status"),
         ("tasks", "List tasks or /tasks <id>"),
+        ("errors", "View failed & blocked items"),
         ("targets", "List targets or /targets <id>"),
         ("routes", "List watch routes or /routes <id>"),
         ("config", "Interactive settings panel"),
@@ -194,6 +243,7 @@ BOT_COMMANDS_I18N: dict[str, list[tuple[str, str]]] = {
         ("help", "完整命令速查字典"),
         ("status", "运行与队列状态"),
         ("tasks", "任务列表或 /tasks <ID>"),
+        ("errors", "查看失败与异常阻断明细"),
         ("targets", "目的地列表或 /targets <ID>"),
         ("routes", "监听路由列表或 /routes <ID>"),
         ("config", "交互式参数设置面板"),

@@ -67,7 +67,8 @@ Send message links or commands directly to the Bot in a private chat:
   /targets [id]                     paginated target list, or manage target #<id>
   /add_route, /routes [id]          create watch route, or manage route #<id>
   /tasks [id], /status              paginated task queue, or inspect/cancel task #<id>
-  /pause, /resume, /retry [id]      pause/resume worker queue or retry failed items
+  /errors [id], /report [id]        inspect failed & blocked items, or export CSV report
+  /pause, /resume, /retry [id]      pause/resume queue or retry failed/blocked items
   /config, /get, /set <k> <v>       interactive settings panel or live parameter update
   /filters                          keyword/regex allowlists, blocklists & media filters
   /export [secrets], /import        YAML configuration backup and atomic restore

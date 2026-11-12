@@ -22,6 +22,14 @@ from sqlalchemy.orm import DeclarativeBase, Mapped, mapped_column
 JOB_STATUSES = ("pending", "downloading", "uploading", "done", "failed", "skipped")
 TERMINAL_STATUSES = ("done", "failed", "skipped")
 TARGET_TYPES = ("telegram", "local", "webdav")
+BENIGN_SKIP_REASONS = (
+    "content_filtered",
+    "type_disabled",
+    "empty",
+    "cancelled",
+    "source_missing",
+    "target_missing",
+)
 
 
 def utcnow() -> datetime:
