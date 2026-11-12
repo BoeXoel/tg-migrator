@@ -5,6 +5,16 @@ All notable changes to this project will be documented in this file.
 The format is based on [Keep a Changelog](https://keepachangelog.com/en/1.1.0/),
 and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0.html).
 
+## [1.0.2] - 2026-11-12
+
+### Fixed
+- **Non-Premium Bandwidth Throttle (`FloodPremiumWaitError`) Handling**:
+  - Aligned `TelegramClient` `flood_sleep_threshold` in `ClientManager.make_client` (and live `SettingsStore` updates) with `limits.floodwait_defer_after_seconds` (default `60s`), along with `request_retries=10` and `raise_last_call_error=True`, so mid-file `GetFileRequest` / `SaveBigFilePartRequest` chunks sleep in-place on short `FloodPremiumWaitError` / `FloodWaitError` throttles instead of aborting in-progress downloads.
+  - Added `FLOOD_WAIT_ERRORS` (`FloodWaitError`, `FloodPremiumWaitError`, `SlowModeWaitError`, `FloodTestPhoneWaitError`) to `TelegramLimiter.call` and `Worker._handle_error` (plus `WebDAVTarget._stream` photo downloads) so any flood wait exceeding the in-place sleep threshold cleanly defers the job (`reason_code="flood_wait"`) without consuming retry attempts or marking the job failed.
+
+### Security
+- **Upgrade `pytest` to `>= 9.0.3` (`9.2.0`)**: Updated `requirements-dev.in` and hash-locked `requirements-dev.txt` to resolve the UNIX `/tmp/pytest-of-{user}` directory vulnerability affecting `pytest < 9.0.3`.
+
 ## [1.0.1] - 2026-11-12
 
 ### Added
