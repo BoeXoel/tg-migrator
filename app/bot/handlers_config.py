@@ -14,6 +14,8 @@ from app.bot.auth import admin_only
 from app.bot.context import AppContext
 from app.bot.ui import (
     PAGE_SIZE,
+    Step,
+    Wizard,
     back_button,
     chunk_buttons,
     command,
@@ -144,6 +146,10 @@ def config_view(ctx: AppContext, section: str = "main") -> tuple[str, list[list[
         rows = [
             [_toggle_button(ctx, "filters.enabled", tr(lang, "Enable content filtering", "启用过滤"))],
             [_toggle_button(ctx, "filters.case_sensitive", tr(lang, "Case-sensitive matching", "区分大小写"))],
+            [
+                Button.inline(tr(lang, "➕ Add Keyword", "➕ 添加关键词"), b"cfg:fadd:keyword"),
+                Button.inline(tr(lang, "➕ Add Regex", "➕ 添加正则"), b"cfg:fadd:regex"),
+            ],
             [Button.inline(tr(lang, "📃 View Rules", "📃 查看规则"), b"cfg:rules"), back_button(b"cfg:main", lang=lang)],
         ]
         return (
@@ -192,27 +198,110 @@ def config_view(ctx: AppContext, section: str = "main") -> tuple[str, list[list[
 async def rules_view(ctx: AppContext, page: int = 0) -> tuple[str, list[list[Any]]]:
     lang = ctx.lang
     rules = await ctx.repo.list_filters()
+    add_buttons = [
+        Button.inline(tr(lang, "➕ Add Keyword", "➕ 添加关键词"), b"cfg:fadd:keyword"),
+        Button.inline(tr(lang, "➕ Add Regex", "➕ 添加正则"), b"cfg:fadd:regex"),
+    ]
     if not rules:
         return (
             tr(
                 lang,
-                "No filter rules configured.\n/filter_add keyword &lt;word&gt;\n/filter_add regex &lt;pattern&gt;",
-                "暂无过滤规则。\n/filter_add keyword 关键词\n/filter_add regex 正则",
+                "No filter rules configured.\n"
+                "<code>/filter_add keyword &lt;word&gt;</code> · <code>/filter_add regex &lt;pattern&gt;</code>",
+                "暂无过滤规则。\n"
+                "<code>/filter_add keyword 关键词</code> · <code>/filter_add regex 正则</code>",
             ),
-            [[back_button(b"cfg:s:filters", lang=lang)]],
+            [add_buttons, [back_button(b"cfg:s:filters", lang=lang)]],
         )
     page_items, page, total_pages = paginate_items(rules, page, PAGE_SIZE)
     page_suffix = f" ({page + 1}/{total_pages})" if total_pages > 1 else ""
     lines = [tr(lang, f"<b>🧹 Filter Rules{page_suffix}</b>", f"<b>🧹 过滤规则{page_suffix}</b>")]
     for rule in page_items:
         lines.append(f"• <code>#{rule.id}</code> {'✅' if rule.enabled else '⬜'} {rule.rule_type}: <code>{esc(rule.pattern)}</code>")
-    lines.append(tr(lang, "\n/filter_del ID to delete · /filter_toggle ID to enable/disable", "\n/filter_del ID 删除 · /filter_toggle ID 启停"))
-    rows: list[list[Any]] = []
+    lines.append(
+        tr(
+            lang,
+            "\n<code>/filter_add keyword &lt;word&gt;</code> · <code>/filter_add regex &lt;pattern&gt;</code>\n"
+            "<code>/filter_del &lt;ID&gt;</code> to delete · <code>/filter_toggle &lt;ID&gt;</code> to enable/disable",
+            "\n<code>/filter_add keyword 关键词</code> · <code>/filter_add regex 正则</code>\n"
+            "<code>/filter_del ID</code> 删除 · <code>/filter_toggle ID</code> 启停",
+        )
+    )
+    rows: list[list[Any]] = [add_buttons]
     nav = pagination_row("cfg:rules", page, total_pages, lang=lang)
     if nav:
         rows.append(nav)
     rows.append([back_button(b"cfg:s:filters", lang=lang)])
     return "\n".join(lines), rows
+
+
+def _filter_wizard(ctx: AppContext, rule_type: str) -> Wizard:
+    lang = ctx.lang
+    rule_type = "regex" if rule_type == "regex" else "keyword"
+
+    def parse_pattern(value: str) -> str:
+        cleaned = value.strip()
+        prefix = f"/filter_add {rule_type}"
+        if cleaned.lower().startswith(prefix):
+            cleaned = cleaned[len(prefix) :].strip()
+        validate_rule(rule_type, cleaned)
+        return cleaned
+
+    async def done(evt: Any, values: dict[str, Any]) -> None:
+        rule = await ctx.repo.add_filter(rule_type, values["pattern"])
+        note = (
+            ""
+            if ctx.store.current.filters.enabled
+            else tr(
+                lang,
+                "\n⚠️ Content filtering is currently disabled: <code>/set filters.enabled true</code>",
+                "\n⚠️ 过滤当前未启用：<code>/set filters.enabled true</code>",
+            )
+        )
+        text, buttons = await rules_view(ctx)
+        header = tr(lang, f"✅ Added rule #{rule.id}{note}\n\n", f"✅ 已添加规则 #{rule.id}{note}\n\n")
+        await evt.respond(header + text, buttons=buttons)
+
+    if rule_type == "regex":
+        title = tr(lang, "Add Regex Filter Rule", "添加正则过滤规则")
+        prompt = tr(
+            lang,
+            "Send the regular expression pattern to block (standard Python regex syntax):\n\n"
+            "📌 <b>Common Templates (tap to copy):</b>\n"
+            "• Multi-word match (any word triggers skip):\n"
+            "  <code>(promo|sponsored|giveaway|affiliate)</code>\n"
+            "• Block external links &amp; Telegram invites:\n"
+            "  <code>https?://|t\\.me/(\\+|joinchat/)</code>\n\n"
+            "💡 Tip: You can also add directly anytime via command:\n"
+            "<code>/filter_add regex &lt;pattern&gt;</code>",
+            "请直接发送要拦截的正则表达式（支持标准正则语法）：\n\n"
+            "📌 <b>常用正则模板（点击即可复制）：</b>\n"
+            "• 多词合并匹配（命中任一即跳过）：\n"
+            "  <code>(广告|推广|抽奖|合作)</code>\n"
+            "• 拦截外部网页链接与群聊邀请链接：\n"
+            "  <code>https?://|t\\.me/(\\+|joinchat/)</code>\n\n"
+            "💡 提示：平时也可直接使用命令添加：\n"
+            "<code>/filter_add regex 正则表达式</code>",
+        )
+    else:
+        title = tr(lang, "Add Keyword Filter Rule", "添加关键词过滤规则")
+        prompt = tr(
+            lang,
+            "Send the keyword or phrase you want to block (any message or Album whose text/caption contains this substring will be skipped):\n\n"
+            "💡 Tip: You can also add directly anytime via command:\n"
+            "<code>/filter_add keyword &lt;word&gt;</code>",
+            "请直接发送要拦截的关键词或短语（正文或配文中包含该词的消息及整组相册将被跳过）：\n\n"
+            "💡 提示：平时也可直接使用命令添加：\n"
+            "<code>/filter_add keyword 你的关键词</code>",
+        )
+
+    return Wizard(
+        title,
+        [Step("pattern", prompt, parse_pattern)],
+        done,
+        lang=lang,
+        back_data=b"cfg:rules",
+    )
 
 
 async def rules_text(ctx: AppContext, page: int = 0) -> str:
@@ -407,6 +496,11 @@ async def on_config_button(event: Any, ctx: AppContext) -> None:
         page = int(parts[2]) if len(parts) > 2 and parts[2].lstrip("-").isdigit() else 0
         text, buttons = await rules_view(ctx, page=page)
         await event.edit(text, buttons=buttons)
+        return
+    elif action == "fadd":
+        rule_type = parts[2] if len(parts) > 2 else "keyword"
+        await event.answer()
+        await ctx.state.wizards.start(event, _filter_wizard(ctx, rule_type))
         return
     elif action == "export":
         await event.answer()
