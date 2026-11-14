@@ -46,6 +46,7 @@ TG Migrator is free and open source. If it helps you, [a star on GitHub](https:/
 ## Use it to
 
 - consolidate scattered groups and channels you belong to into a single, organized Forum Topic group,
+- react with an emoji (`❤️`, `👍`, etc.) on any Bot-archived message to instantly prepend or toggle searchable `#TAG`s in-place,
 - archive media, documents, and structured `.json` / `.md` metadata sidecars to a home NAS or OpenList / Nextcloud WebDAV server,
 - mirror ongoing messages from a source chat (or a specific Forum Topic) to multiple destinations 24/7,
 - automatically offload oversized `2–4 GiB` files to a linked Local / WebDAV fallback target (or upload via a logged-in Premium account),
@@ -71,6 +72,7 @@ Send message links or commands directly to the Bot in a private chat:
   /pause, /resume, /retry [id]      pause/resume queue or retry failed/blocked items
   /config, /get, /set <k> <v>       interactive settings panel or live parameter update
   /filters                          keyword/regex allowlists, blocklists & media filters
+  /tags                             emoji reaction auto-tagging rules (❤️ → #tgm_fav)
   /export [secrets], /import        YAML configuration backup and atomic restore
   /lang                             switch Bot UI language (English / 简体中文)
 ```

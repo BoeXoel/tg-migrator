@@ -30,6 +30,7 @@ from app.bot.ui import (
 )
 from app.config import CHOICES, SECTION_NAMES, dataclass_to_dict, get_setting, leaf_paths
 from app.engine.filters import validate_rule
+from app.engine.reaction_tagger import normalize_emoji, normalize_tag, parse_emoji_tag_pair
 
 log = logging.getLogger("migrator.bot.config")
 
@@ -177,7 +178,10 @@ def config_view(ctx: AppContext, section: str = "main") -> tuple[str, list[list[
             Button.inline(tr(lang, "🧹 Filters", "🧹 过滤"), b"cfg:s:filters"),
         ],
         [
+            Button.inline(tr(lang, "🏷 Emoji Tags", "🏷 表情标签"), b"cfg:s:tags"),
             Button.inline(tr(lang, "🛠 Advanced", "🛠 高级参数"), b"cfg:s:advanced"),
+        ],
+        [
             Button.inline(tr(lang, "💾 Export YAML", "💾 导出 YAML"), b"cfg:export"),
         ],
         [
@@ -309,6 +313,148 @@ async def rules_text(ctx: AppContext, page: int = 0) -> str:
     return text
 
 
+async def tags_view(ctx: AppContext, page: int = 0, *, back_data: bytes = b"cfg:main") -> tuple[str, list[list[Any]]]:
+    lang = ctx.lang
+    rules = await ctx.repo.list_reaction_tags()
+    toggle_btn = _toggle_button(
+        ctx,
+        "tags.enabled",
+        tr(lang, "Enable emoji reaction auto-tagging", "启用表情回应自动打标"),
+    )
+    add_btn = Button.inline(tr(lang, "➕ Add / Edit Emoji Tag", "➕ 添加/修改表情标签"), b"cfg:tadd")
+
+    header_desc = tr(
+        lang,
+        "<b>🏷 Emoji Reaction Auto-Tags</b>\n"
+        "When an admin reacts to a Bot-delivered message in a target group/topic, the mapped <code>#TAG</code> is synced at the start of the message (single-space separated, no newline).",
+        "<b>🏷 表情回应自动打标</b>\n"
+        "管理员在目的地群组/子话题对 Bot 发送的归档消息点亮或取消 Emoji 时，自动在消息开头同步对应 <code>#TAG</code>（单空格分隔、不换行）。",
+    )
+
+    if not rules:
+        body = tr(
+            lang,
+            "\n\nNo emoji tag mappings configured.\n"
+            "<code>/tag_set ❤️ #tgm_fav</code> to add or update",
+            "\n\n暂无表情标签映射。\n"
+            "<code>/tag_set ❤️ #tgm_fav</code> 添加或修改",
+        )
+        return header_desc + body, [[toggle_btn], [add_btn], [back_button(back_data, lang=lang)]]
+
+    page_items, page, total_pages = paginate_items(rules, page, PAGE_SIZE)
+    page_suffix = f" ({page + 1}/{total_pages})" if total_pages > 1 else ""
+    lines = [header_desc, "", tr(lang, f"<b>Mappings{page_suffix}</b>", f"<b>当前映射{page_suffix}</b>")]
+    for rule in page_items:
+        lines.append(
+            f"• <code>#{rule.id}</code> {'✅' if rule.enabled else '⬜'} {esc(rule.emoji)} → <code>{esc(rule.tag)}</code>"
+        )
+    lines.append(
+        tr(
+            lang,
+            "\n<code>/tag_set &lt;emoji&gt; &lt;#tag&gt;</code> to add/update\n"
+            "<code>/tag_del &lt;ID&gt;</code> to delete · <code>/tag_toggle &lt;ID&gt;</code> to enable/disable",
+            "\n<code>/tag_set 表情 #标签</code> 添加或修改\n"
+            "<code>/tag_del ID</code> 删除 · <code>/tag_toggle ID</code> 启停",
+        )
+    )
+    rows: list[list[Any]] = [[toggle_btn], [add_btn]]
+    nav = pagination_row("cfg:tags", page, total_pages, lang=lang)
+    if nav:
+        rows.append(nav)
+    rows.append([back_button(back_data, lang=lang)])
+    return "\n".join(lines), rows
+
+
+def _tag_wizard(ctx: AppContext) -> Wizard:
+    lang = ctx.lang
+
+    def parse_first(value: str) -> dict[str, str]:
+        cleaned = value.strip()
+        for prefix in ("/tag_set", "/tag_add"):
+            if cleaned.lower().startswith(prefix):
+                cleaned = cleaned[len(prefix) :].strip()
+                break
+        parts = cleaned.split(None, 1)
+        if not parts:
+            raise ValueError(
+                tr(lang, "Please send <emoji> <#tag> (e.g. 🔥 #tgm_hot)", "请发送「表情 #标签」（例如：🔥 #tgm_hot）")
+            )
+        emoji, emoji_key = normalize_emoji(parts[0])
+        result: dict[str, str] = {"emoji": emoji, "emoji_key": emoji_key}
+        if len(parts) > 1 and parts[1].strip():
+            result["tag"] = normalize_tag(parts[1])
+        return result
+
+    def parse_second_tag(value: str) -> str:
+        return normalize_tag(value)
+
+    async def done(evt: Any, values: dict[str, Any]) -> None:
+        entry = dict(values["entry"])
+        tag = entry.get("tag") or values["tag"]
+        if "tag" in values["entry"]:
+            entities = getattr(getattr(evt, "message", None), "entities", None)
+            if entities:
+                try:
+                    disp, key, _ = parse_emoji_tag_pair(evt.raw_text or "", entities=entities)
+                    entry["emoji"], entry["emoji_key"] = disp, key
+                except ValueError:
+                    pass
+        rule, created = await ctx.repo.upsert_reaction_tag(entry["emoji"], entry["emoji_key"], tag)
+        note = (
+            ""
+            if ctx.store.current.tags.enabled
+            else tr(
+                lang,
+                "\n⚠️ Emoji auto-tagging is currently disabled: <code>/set tags.enabled true</code>",
+                "\n⚠️ 表情自动打标当前未启用：<code>/set tags.enabled true</code>",
+            )
+        )
+        view_text, buttons = await tags_view(ctx)
+        action_zh = "已添加映射" if created else "已更新映射"
+        action_en = "Added mapping" if created else "Updated mapping"
+        header = tr(
+            lang,
+            f"✅ {action_en} #{rule.id}: {esc(rule.emoji)} → <code>{esc(rule.tag)}</code>{note}\n\n",
+            f"✅ {action_zh} #{rule.id}：{esc(rule.emoji)} → <code>{esc(rule.tag)}</code>{note}\n\n",
+        )
+        await evt.respond(header + view_text, buttons=buttons)
+
+    title = tr(lang, "Add / Update Emoji Tag", "添加/修改表情标签映射")
+    prompt_step1 = tr(
+        lang,
+        "Send the <b>emoji</b> and <b>#tag</b> separated by a space (if the emoji already exists, its tag will be updated):\n\n"
+        "📌 <b>Examples (tap to copy):</b>\n"
+        "• <code>🔥 #tgm_hot</code>\n"
+        "• <code>⭐ #tgm_star</code>\n"
+        "• <code>❤️ #my_fav</code> (updates the default ❤️ tag)\n\n"
+        "💡 Note: Use underscores <code>_</code> instead of hyphens <code>-</code> so the whole tag stays clickable in Telegram.\n"
+        "Command shortcut: <code>/tag_set &lt;emoji&gt; &lt;#tag&gt;</code>",
+        "请发送 <b>Emoji 表情</b> 与对应的 <b>#标签</b>（中间加空格；若该表情已存在则会直接修改其标签）：\n\n"
+        "📌 <b>示例（点击即可复制）：</b>\n"
+        "• <code>🔥 #tgm_hot</code>\n"
+        "• <code>⭐ #tgm_star</code>\n"
+        "• <code>❤️ #my_fav</code>（直接修改默认红心标签）\n\n"
+        "💡 提示：标签建议使用下划线 <code>_</code> 而非连字符 <code>-</code>，且尽量带有专属前缀以免与原消息标签冲突（未带 <code>#</code> 会自动补全）。\n"
+        "平时也可直接使用命令：<code>/tag_set 表情 #标签</code>",
+    )
+    prompt_step2 = tr(
+        lang,
+        "Now send the <b>#tag</b> for this emoji (for example: <code>#tgm_hot</code>):",
+        "请继续发送该表情对应的 <b>#标签</b>（例如：<code>#tgm_hot</code>）：",
+    )
+
+    return Wizard(
+        title,
+        [
+            Step("entry", prompt_step1, parse_first),
+            Step("tag", prompt_step2, parse_second_tag, skip_if=lambda v: "tag" in v.get("entry", {})),
+        ],
+        done,
+        lang=lang,
+        back_data=b"cfg:s:tags",
+    )
+
+
 async def cmd_config(event: Any, ctx: AppContext) -> None:
     text, buttons = config_view(ctx)
     await event.respond(text, buttons=buttons)
@@ -401,6 +547,101 @@ async def cmd_filter_toggle(event: Any, ctx: AppContext) -> None:
     state_en = "disabled" if rule.enabled else "enabled"
     state_zh = "停用" if rule.enabled else "启用"
     await event.respond(ctx.t(f"Rule #{rule.id} {state_en}.", f"规则 #{rule.id} 已{state_zh}。"))
+
+
+async def cmd_tags(event: Any, ctx: AppContext) -> None:
+    arg = command_args(event).strip()
+    page = max(0, int(arg) - 1) if arg.isdigit() else 0
+    text, buttons = await tags_view(ctx, page=page, back_data=b"m:home")
+    await event.respond(text, buttons=buttons)
+
+
+async def cmd_tag_set(event: Any, ctx: AppContext) -> None:
+    lang = ctx.lang
+    raw = command_args(event)
+    if not raw:
+        await event.respond(
+            tr(
+                lang,
+                "Usage: <code>/tag_set &lt;emoji&gt; &lt;#tag&gt;</code>\nExample: <code>/tag_set 🔥 #tgm_hot</code>",
+                "用法：<code>/tag_set 表情 #标签</code>\n示例：<code>/tag_set 🔥 #tgm_hot</code>",
+            )
+        )
+        return
+    entities = getattr(getattr(event, "message", None), "entities", None)
+    try:
+        emoji, emoji_key, tag = parse_emoji_tag_pair(event.raw_text or raw, entities=entities)
+    except ValueError as exc:
+        await event.respond(f"❌ {esc(exc)}")
+        return
+    rule, created = await ctx.repo.upsert_reaction_tag(emoji, emoji_key, tag)
+    note = (
+        ""
+        if ctx.store.current.tags.enabled
+        else tr(
+            lang,
+            "\n⚠️ Emoji auto-tagging is currently disabled: <code>/set tags.enabled true</code>",
+            "\n⚠️ 表情自动打标当前未启用：<code>/set tags.enabled true</code>",
+        )
+    )
+    await event.respond(
+        tr(
+            lang,
+            f"✅ {'Added' if created else 'Updated'} mapping #{rule.id}: {esc(rule.emoji)} → <code>{esc(rule.tag)}</code>{note}",
+            f"✅ {'已添加' if created else '已更新'}映射 #{rule.id}：{esc(rule.emoji)} → <code>{esc(rule.tag)}</code>{note}",
+        )
+    )
+
+
+async def _find_tag_rule(ctx: AppContext, raw: str) -> Any:
+    token = raw.strip().lstrip("#") if raw.strip().lstrip("#").isdigit() else raw.strip()
+    rules = await ctx.repo.list_reaction_tags()
+    if token.isdigit():
+        rid = int(token)
+        return next((r for r in rules if r.id == rid), None)
+    try:
+        _, key = normalize_emoji(raw.strip())
+    except ValueError:
+        return None
+    return next((r for r in rules if r.emoji_key == key), None)
+
+
+async def cmd_tag_del(event: Any, ctx: AppContext) -> None:
+    raw = command_args(event).strip()
+    if not raw:
+        await event.respond(ctx.t("Usage: /tag_del <id or emoji>", "用法：/tag_del ID或表情"))
+        return
+    rule = await _find_tag_rule(ctx, raw)
+    if rule is None:
+        await event.respond(ctx.t("Mapping does not exist.", "映射不存在。"))
+        return
+    await ctx.repo.delete_reaction_tag(rule.id)
+    await event.respond(
+        ctx.t(
+            f"🗑 Deleted mapping #{rule.id} ({esc(rule.emoji)} → <code>{esc(rule.tag)}</code>).",
+            f"🗑 已删除映射 #{rule.id}（{esc(rule.emoji)} → <code>{esc(rule.tag)}</code>）。",
+        )
+    )
+
+
+async def cmd_tag_toggle(event: Any, ctx: AppContext) -> None:
+    raw = command_args(event).strip()
+    if not raw:
+        await event.respond(ctx.t("Usage: /tag_toggle <id or emoji>", "用法：/tag_toggle ID或表情"))
+        return
+    rule = await _find_tag_rule(ctx, raw)
+    if rule is None:
+        await event.respond(ctx.t("Mapping does not exist.", "映射不存在。"))
+        return
+    await ctx.repo.set_reaction_tag_enabled(rule.id, not rule.enabled)
+    state_en = "disabled" if rule.enabled else "enabled"
+    state_zh = "停用" if rule.enabled else "启用"
+    await event.respond(
+        ctx.t(
+            f"Mapping #{rule.id} ({esc(rule.emoji)}) {state_en}.",
+            f"映射 #{rule.id}（{esc(rule.emoji)}）已{state_zh}。",
+        )
+    )
 
 
 async def _send_export(event: Any, ctx: AppContext, include_secrets: bool) -> None:
@@ -502,9 +743,22 @@ async def on_config_button(event: Any, ctx: AppContext) -> None:
         await event.answer()
         await ctx.state.wizards.start(event, _filter_wizard(ctx, rule_type))
         return
+    elif action == "tags":
+        page = int(parts[2]) if len(parts) > 2 and parts[2].lstrip("-").isdigit() else 0
+        text, buttons = await tags_view(ctx, page=page)
+        await event.edit(text, buttons=buttons)
+        return
+    elif action == "tadd":
+        await event.answer()
+        await ctx.state.wizards.start(event, _tag_wizard(ctx))
+        return
     elif action == "export":
         await event.answer()
         await _send_export(event, ctx, False)
+        return
+    if section == "tags":
+        text, buttons = await tags_view(ctx)
+        await event.edit(text, buttons=buttons)
         return
     text, buttons = config_view(ctx, section)
     await event.edit(text, buttons=buttons)
@@ -513,7 +767,7 @@ async def on_config_button(event: Any, ctx: AppContext) -> None:
 def _section_for(path: str) -> str:
     if path.startswith("transfer.include."):
         return "media"
-    return path.split(".", 1)[0] if path.split(".", 1)[0] in {"transfer", "archive", "filters"} else "main"
+    return path.split(".", 1)[0] if path.split(".", 1)[0] in {"transfer", "archive", "filters", "tags"} else "main"
 
 
 def register(bot: TelegramClient, ctx: AppContext) -> None:
@@ -525,6 +779,11 @@ def register(bot: TelegramClient, ctx: AppContext) -> None:
         "filter_add": cmd_filter_add,
         "filter_del": cmd_filter_del,
         "filter_toggle": cmd_filter_toggle,
+        "tags": cmd_tags,
+        "tag_set": cmd_tag_set,
+        "tag_add": cmd_tag_set,
+        "tag_del": cmd_tag_del,
+        "tag_toggle": cmd_tag_toggle,
         "export": cmd_export,
         "import": cmd_import,
     }

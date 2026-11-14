@@ -340,6 +340,13 @@ class FilterSettings:
 
 
 @dataclass
+class ReactionTagSettings:
+    """Global switch; individual emoji->tag rules live in reaction_tag_rules."""
+
+    enabled: bool = True
+
+
+@dataclass
 class QueueSettings:
     max_attempts: int = 4
     retry_backoff_seconds: list[int] = field(default_factory=lambda: [300, 600, 1800])
@@ -405,6 +412,7 @@ class RuntimeSettings:
     transfer: TransferSettings = field(default_factory=TransferSettings)
     archive: ArchiveSettings = field(default_factory=ArchiveSettings)
     filters: FilterSettings = field(default_factory=FilterSettings)
+    tags: ReactionTagSettings = field(default_factory=ReactionTagSettings)
     queue: QueueSettings = field(default_factory=QueueSettings)
     limits: LimitSettings = field(default_factory=LimitSettings)
     worker: WorkerSettings = field(default_factory=WorkerSettings)

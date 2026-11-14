@@ -15,6 +15,7 @@ from app.db.models import (
     TERMINAL_STATUSES,
     FilterRule,
     Job,
+    ReactionTagRule,
     RemoteObject,
     Route,
     Setting,
@@ -286,6 +287,80 @@ class Repository:
             for rule_type, pattern, enabled in rules:
                 session.add(FilterRule(rule_type=rule_type, pattern=pattern, enabled=enabled))
             await session.commit()
+
+    # ----------------------------------------------------------- reaction tags
+
+    async def seed_default_reaction_tags(self, defaults: Sequence[tuple[str, str, str]]) -> int:
+        """Seed built-in emoji->tag mappings once on first startup."""
+
+        if await self.get_state("reaction_tags_seeded", False):
+            return 0
+        existing = await self.list_reaction_tags()
+        added = 0
+        if not existing:
+            async with self._sm() as session:
+                for emoji, emoji_key, tag in defaults:
+                    session.add(ReactionTagRule(emoji=emoji, emoji_key=emoji_key, tag=tag, enabled=True))
+                    added += 1
+                await session.commit()
+        await self.set_state("reaction_tags_seeded", True)
+        return added
+
+    async def list_reaction_tags(self, *, enabled_only: bool = False) -> list[ReactionTagRule]:
+        async with self._sm() as session:
+            stmt = select(ReactionTagRule).order_by(ReactionTagRule.id)
+            if enabled_only:
+                stmt = stmt.where(ReactionTagRule.enabled.is_(True))
+            return list((await session.execute(stmt)).scalars().all())
+
+    async def upsert_reaction_tag(
+        self, emoji: str, emoji_key: str, tag: str, *, enabled: bool = True
+    ) -> tuple[ReactionTagRule, bool]:
+        async with self._sm() as session:
+            existing = (
+                await session.execute(select(ReactionTagRule).where(ReactionTagRule.emoji_key == emoji_key))
+            ).scalar_one_or_none()
+            if existing is None:
+                rule = ReactionTagRule(emoji=emoji, emoji_key=emoji_key, tag=tag, enabled=enabled)
+                session.add(rule)
+                await session.commit()
+                return rule, True
+            existing.emoji = emoji
+            existing.tag = tag
+            existing.enabled = enabled
+            existing.updated_at = utcnow()
+            await session.commit()
+            return existing, False
+
+    async def delete_reaction_tag(self, rule_id: int) -> bool:
+        async with self._sm() as session:
+            result = await session.execute(delete(ReactionTagRule).where(ReactionTagRule.id == rule_id))
+            await session.commit()
+            return bool(result.rowcount)
+
+    async def delete_reaction_tag_by_key(self, emoji_key: str) -> bool:
+        async with self._sm() as session:
+            result = await session.execute(delete(ReactionTagRule).where(ReactionTagRule.emoji_key == emoji_key))
+            await session.commit()
+            return bool(result.rowcount)
+
+    async def set_reaction_tag_enabled(self, rule_id: int, enabled: bool) -> bool:
+        async with self._sm() as session:
+            result = await session.execute(
+                update(ReactionTagRule)
+                .where(ReactionTagRule.id == rule_id)
+                .values(enabled=enabled, updated_at=utcnow())
+            )
+            await session.commit()
+            return bool(result.rowcount)
+
+    async def replace_reaction_tags(self, rules: Iterable[tuple[str, str, str, bool]]) -> None:
+        async with self._sm() as session:
+            await session.execute(delete(ReactionTagRule))
+            for emoji, emoji_key, tag, enabled in rules:
+                session.add(ReactionTagRule(emoji=emoji, emoji_key=emoji_key, tag=tag, enabled=enabled))
+            await session.commit()
+        await self.set_state("reaction_tags_seeded", True)
 
     # ------------------------------------------------------------------ tasks
 

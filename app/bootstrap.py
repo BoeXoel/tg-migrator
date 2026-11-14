@@ -14,6 +14,7 @@ from app.config import BootstrapConfig
 from app.db.engine import create_engine, describe_database, init_models, make_sessionmaker, normalise_database_url
 from app.db.repository import Repository
 from app.engine.notifier import Notifier
+from app.engine.reaction_tagger import ReactionTagger, default_seed_triples
 from app.engine.scanner import Scanner
 from app.engine.verifier import Verifier
 from app.engine.watcher import Watcher
@@ -38,6 +39,7 @@ async def build_context(boot: BootstrapConfig) -> AppContext:
     repo = Repository(engine, make_sessionmaker(engine), secrets)
     store = SettingsStore(repo, default_language=boot.bot_lang)
     await store.load()
+    await repo.seed_default_reaction_tags(default_seed_triples())
 
     limiter = TelegramLimiter(store)
     clients = ClientManager(boot, limiter)
@@ -47,6 +49,7 @@ async def build_context(boot: BootstrapConfig) -> AppContext:
     scanner = Scanner(clients, limiter, repo, store, wake_worker=worker.wake)
     watcher = Watcher(clients, repo, store, scanner, notifier)
     verifier = Verifier(clients, limiter, repo)
+    reaction_tagger = ReactionTagger(boot, clients, limiter, repo, store, notifier)
     return AppContext(
         boot=boot,
         repo=repo,
@@ -59,6 +62,7 @@ async def build_context(boot: BootstrapConfig) -> AppContext:
         worker=worker,
         verifier=verifier,
         database_label=describe_database(database_url),
+        reaction_tagger=reaction_tagger,
     )
 
 
@@ -85,6 +89,8 @@ async def run_service(boot: BootstrapConfig) -> None:
         bot = await ctx.clients.start_bot()
         ctx.notifier.bot = bot
         register_all(bot, ctx)
+        if ctx.reaction_tagger is not None:
+            ctx.reaction_tagger.register(bot)
         await sync_bot_commands(bot, ctx.lang, ctx.boot.admin_ids)
         ctx.clients.on_reader_ready(on_reader_ready)
         await ctx.worker.load_state()
