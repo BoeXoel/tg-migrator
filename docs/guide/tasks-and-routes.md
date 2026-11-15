@@ -84,7 +84,25 @@ Content filters automatically block unwanted messages (such as sponsored posts, 
 
 ---
 
-## 4. Per-Route Setting Overrides (`/route_set`)
+## 4. Emoji Reaction Auto-Tagging (`/tags`)
+
+Because messages sent by a Bot in Telegram can only be edited by that Bot, TG Migrator lets admins in `ADMIN_IDS` react with an emoji on any Bot-delivered archive message in a configured Telegram target chat to automatically prepend (or remove) searchable `#TAG`s at the very start of the message—separated by a single space with no extra line break, while preserving existing hashtags and rich-text entities.
+
+- **Built-in Defaults**:
+  - `❤️` → `#tgm_fav`
+  - `👍` → `#tgm_like`
+- **Bi-Directional & Multi-Emoji Support**: Adding reactions prepends their `#TAG`s (including up to 3 simultaneous emoji reactions for Telegram Premium users, e.g. `#tgm_fav #tgm_like #tgm_hot Original text`), and removing or evicting a reaction cleanly strips only that `#TAG`. Reacting to any photo/video inside an Album automatically updates the Album's main caption message.
+- **Manage Tag Rules**: Send `/tags` (or open **`⚙️ Settings` → `🏷 Emoji Tags`**), tap **`➕ Add / Edit Emoji Tag`**, or run:
+  ```text
+  /tag_set 🔥 #tgm_hot
+  /tag_toggle 1
+  /tag_del 🔥
+  ```
+- **Requirement**: Ensure the Bot has Administrator privileges in the destination group/channel so Telegram delivers message reaction updates (`UpdateBotMessageReaction`) to it.
+
+---
+
+## 5. Per-Route Setting Overrides (`/route_set`)
 
 Each Watch Route supports dotted setting overrides that take precedence over global runtime settings. For example, to keep captions globally while stripping captions or excluding plain text on a single route:
 
@@ -101,7 +119,7 @@ Each Watch Route supports dotted setting overrides that take precedence over glo
 
 ---
 
-## 5. Queue Management & Recovery
+## 6. Queue Management & Recovery
 
 - **Inspect Queue & Disk Space**: Send `/status` (or tap **`📊 Status`**).
 - **Inspect Failed & Blocked Items**: Send `/errors` (global across all tasks and live Watch Routes) or `/errors 5` (for Task `#5`, also accessible via **`⚠️ View Issues`** in `/tasks 5`) to view a paginated list of failed or blocked-skipped messages with clickable source links and error reasons.

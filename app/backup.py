@@ -14,6 +14,7 @@ from app.config import dataclass_to_dict, settings_from_sections
 from app.db.models import TARGET_TYPES
 from app.db.repository import Repository
 from app.engine.filters import validate_rule
+from app.engine.reaction_tagger import normalize_emoji, normalize_tag
 from app.settings_store import SettingsStore
 from app.targets.local_target import resolve_local_root
 from app.targets.webdav_target import validate_webdav_url
@@ -31,6 +32,7 @@ class ImportReport:
     routes_updated: int = 0
     routes_removed: int = 0
     filters: int | None = None
+    reaction_tags: int | None = None
     settings: bool = False
     warnings: list[str] = field(default_factory=list)
 
@@ -40,6 +42,7 @@ class ImportReport:
             f"目的地：新增 {self.targets_added} · 更新 {self.targets_updated} · 删除 {self.targets_removed}",
             f"路由：新增 {self.routes_added} · 更新 {self.routes_updated} · 删除 {self.routes_removed}",
             f"过滤规则：{'未变更' if self.filters is None else f'替换为 {self.filters} 条'}",
+            f"表情标签：{'未变更' if self.reaction_tags is None else f'替换为 {self.reaction_tags} 条'}",
         ]
         lines.extend(f"⚠️ {warning}" for warning in self.warnings)
         return "\n".join(lines)
@@ -85,6 +88,10 @@ async def export_yaml(repo: Repository, store: SettingsStore, *, include_secrets
         "filter_rules": [
             {"type": rule.rule_type, "pattern": rule.pattern, "enabled": rule.enabled}
             for rule in await repo.list_filters()
+        ],
+        "reaction_tags": [
+            {"emoji": rule.emoji, "tag": rule.tag, "enabled": rule.enabled}
+            for rule in await repo.list_reaction_tags()
         ],
     }
     header = (
@@ -160,6 +167,22 @@ async def import_yaml(
             raise ValueError("filter_rules must be a list")
         for rule in rules:
             validate_rule(str(rule.get("type")), str(rule.get("pattern") or ""))
+    reaction_tags = document.get("reaction_tags")
+    parsed_reaction_tags: list[tuple[str, str, str, bool]] | None = None
+    if reaction_tags is not None:
+        if not isinstance(reaction_tags, list):
+            raise ValueError("reaction_tags must be a list")
+        parsed_reaction_tags = []
+        seen_emoji_keys: set[str] = set()
+        for item in reaction_tags:
+            if not isinstance(item, dict):
+                raise ValueError("Each reaction_tags item must be a mapping")
+            disp, key = normalize_emoji(str(item.get("emoji") or ""))
+            if key in seen_emoji_keys:
+                raise ValueError(f"Duplicate reaction_tags emoji: {disp}")
+            seen_emoji_keys.add(key)
+            tag = normalize_tag(str(item.get("tag") or ""))
+            parsed_reaction_tags.append((disp, key, tag, bool(item.get("enabled", True))))
 
     # Settings
     if new_settings is not None:
@@ -229,6 +252,10 @@ async def import_yaml(
     if rules is not None:
         await repo.replace_filters((str(r["type"]), str(r["pattern"]), bool(r.get("enabled", True))) for r in rules)
         report.filters = len(rules)
+
+    if parsed_reaction_tags is not None:
+        await repo.replace_reaction_tags(parsed_reaction_tags)
+        report.reaction_tags = len(parsed_reaction_tags)
 
     if replace:
         keep_routes = {item["name"] for item in routes}

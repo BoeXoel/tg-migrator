@@ -4,6 +4,7 @@ from __future__ import annotations
 
 import logging
 import time
+from collections import deque
 from typing import Any
 
 log = logging.getLogger("migrator.notify")
@@ -15,6 +16,10 @@ class Notifier:
         self.cooldown_seconds = cooldown_seconds
         self.bot: Any = None
         self._last_sent: dict[str, float] = {}
+        self._sent_messages: deque[tuple[int, int]] = deque(maxlen=500)
+
+    def is_system_message(self, chat_id: int, msg_id: int) -> bool:
+        return (int(chat_id), int(msg_id)) in self._sent_messages
 
     async def notify(
         self,
@@ -38,7 +43,10 @@ class Notifier:
                 kwargs: dict[str, Any] = {"parse_mode": None, "link_preview": False}
                 if buttons is not None:
                     kwargs["buttons"] = buttons
-                await self.bot.send_message(target, text, **kwargs)
+                sent = await self.bot.send_message(target, text, **kwargs)
+                sent_id = getattr(sent, "id", None)
+                if sent_id is not None:
+                    self._sent_messages.append((int(target), int(sent_id)))
             except Exception as exc:
                 log.warning("Could not notify %s: %s", target, exc)
 

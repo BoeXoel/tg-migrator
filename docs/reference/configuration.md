@@ -29,7 +29,11 @@ This page provides a complete reference for all Telegram Bot commands, `.env` bo
 | `/filters` | — | View content filter switches and active keyword/regex rules |
 | `/filter_add` | `keyword\|regex <pat>` | Add a content filter rule |
 | `/filter_del` | `<rule_id>` | Delete a content filter rule by ID |
-| `/export` | `[secrets]` | Export all settings, targets, routes, and filters to YAML (`/export secrets` includes passwords) |
+| `/tags` | — | View emoji reaction auto-tagging switches and `emoji → #TAG` mappings |
+| `/tag_set` (or `/tag_add`) | `<emoji> <#tag>` | Add or update an emoji reaction auto-tag mapping |
+| `/tag_toggle` | `<id\|emoji>` | Enable or disable an emoji tag rule |
+| `/tag_del` | `<id\|emoji>` | Delete an emoji tag rule by ID or emoji |
+| `/export` | `[secrets]` | Export all settings, targets, routes, filters, and emoji tags to YAML (`/export secrets` includes passwords) |
 | `/import` | `[replace]` | Reply to a YAML file with `/import` (merge) or `/import replace` (full overwrite) |
 | `/pause` / `/resume` | — | Pause or resume the background transfer worker |
 | `/retry` | `[task_id] [all]` | Re-queue failed jobs globally or for a task (`all` also re-queues blocked skips) |
@@ -68,10 +72,11 @@ Bootstrap variables are loaded on container startup:
 
 All runtime settings are stored in the database and take effect immediately without restarting the container:
 
-### `ui.*` — Interface
+### `ui.*` & `tags.*` — Interface & Reaction Tagging
 | Key | Default | Allowed Values / Description |
 | :--- | :--- | :--- |
 | `ui.language` | `en` | `en` (English) or `zh` (Simplified Chinese) |
+| `tags.enabled` | `true` | Enable bi-directional emoji reaction auto-tagging on Bot-delivered Telegram archive messages |
 
 ### `transfer.*` — Transfer & Media Handling
 | Key | Default | Description |

@@ -5,6 +5,19 @@ All notable changes to this project will be documented in this file.
 The format is based on [Keep a Changelog](https://keepachangelog.com/en/1.1.0/),
 and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0.html).
 
+## [1.0.3] - 2026-11-15
+
+### Added
+- **Bi-Directional Emoji Reaction Auto-Tagging (`/tags`)**:
+  - Admins in `ADMIN_IDS` can now react with configured emojis on Bot-delivered archive messages in Telegram target groups/topics (`UpdateBotMessageReaction`) to automatically prepend single-space-separated `#TAG`s at the very beginning of the message (no extra line break), and un-react to strip them back out.
+  - Seeds two collision-free default mappings once on first startup (`❤️` → `#tgm_fav`, `👍` → `#tgm_like`) without re-creating them if deleted or customized later.
+  - Supports multi-emoji accumulation for Telegram Premium accounts (up to 3 simultaneous reactions per message) and automatic tag replacement when Telegram evicts an older reaction on a 4th emoji.
+  - Automatically resolves multi-item **Albums (`grouped_id`)** so reacting to any sibling photo/video updates the Album's main caption carrier message while preserving reactions held on sibling items.
+  - Preserves existing message hashtags and shifts UTF-16 `MessageEntity` offsets cleanly on edit, while strictly ignoring private console messages, inline-button panels, `Notifier` system alerts, and non-captionable media (`sticker`, `video_note`, etc.).
+- **Emoji Tag Console UI & YAML Backup**:
+  - Added `/tags` command, **`🏷 Emoji Tags`** section in `/config`, global `tags.enabled` switch, 1-or-2-step **`➕ Add / Edit Emoji Tag`** interactive wizard, and `/tag_set <emoji> <#tag>` (alias `/tag_add`), `/tag_toggle <id|emoji>`, and `/tag_del <id|emoji>` commands.
+  - Included `reaction_tags` rules and `settings.tags` in `/export` and `/import` YAML configuration backups.
+
 ## [1.0.2] - 2026-11-12
 
 ### Fixed

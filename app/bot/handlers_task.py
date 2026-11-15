@@ -53,10 +53,11 @@ Send any Telegram message link directly:
 /add_route Create route
 /route_set <code>id key value</code> · /route_unset <code>id key</code> Per-route setting override
 
-<b>Settings & Filters</b>
+<b>Settings, Filters &amp; Tags</b>
 /config Panel · /get <code>[section]</code> · /set <code>key value</code>
 /lang Switch language (English / 简体中文)
 /filters Rules · /filter_add <code>keyword|regex pattern</code> · /filter_del <code>id</code>
+/tags Emoji tags · /tag_set <code>emoji #tag</code> · /tag_del <code>id</code> · /tag_toggle <code>id</code>
 /export <code>[secrets]</code> Export YAML · /import <code>[replace]</code> Import YAML
 
 <b>Queue & Maintenance</b>
@@ -88,10 +89,11 @@ HELP_TEXT_ZH = """<b>📖 TG Migrator 命令速查字典</b>
 /add_route 新建监听路由
 /route_set <code>id 设置项 值</code> · /route_unset <code>id 设置项</code> 路由级参数覆盖
 
-<b>参数设置与过滤</b>
+<b>参数设置、过滤与标签</b>
 /config 设置面板 · /get <code>[分区]</code> · /set <code>设置项 值</code>
 /lang 切换语言（English / 简体中文）
 /filters 过滤规则 · /filter_add <code>keyword|regex 内容</code> · /filter_del <code>id</code>
+/tags 表情打标 · /tag_set <code>表情 #标签</code> · /tag_del <code>id</code> · /tag_toggle <code>id</code>
 /export <code>[secrets]</code> 导出 YAML · /import <code>[replace]</code> 导入 YAML
 
 <b>队列与维护</b>

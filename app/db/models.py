@@ -96,6 +96,19 @@ class FilterRule(Base):
     created_at: Mapped[datetime] = mapped_column(DateTime, default=utcnow)
 
 
+class ReactionTagRule(Base):
+    __tablename__ = "reaction_tag_rules"
+    __table_args__ = (UniqueConstraint("emoji_key", name="uq_reaction_tag_emoji_key"),)
+
+    id: Mapped[int] = mapped_column(Integer, primary_key=True, autoincrement=True)
+    emoji: Mapped[str] = mapped_column(String(64))
+    emoji_key: Mapped[str] = mapped_column(String(64))
+    tag: Mapped[str] = mapped_column(String(128))
+    enabled: Mapped[bool] = mapped_column(Boolean, default=True)
+    created_at: Mapped[datetime] = mapped_column(DateTime, default=utcnow)
+    updated_at: Mapped[datetime] = mapped_column(DateTime, default=utcnow, onupdate=utcnow)
+
+
 class Task(Base):
     __tablename__ = "tasks"
 

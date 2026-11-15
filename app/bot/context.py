@@ -115,6 +115,7 @@ class AppContext:
     worker: Worker
     verifier: Verifier
     database_label: str
+    reaction_tagger: Any = None
     state: BotState = field(default_factory=BotState)
     extras: dict[str, Any] = field(default_factory=dict)
 
